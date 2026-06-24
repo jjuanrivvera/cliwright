@@ -28,6 +28,12 @@ archives:
 
 checksum: { name_template: checksums.txt }
 
+# An explicit release block — without it, `goreleaser check` errors on a fresh repo
+# ("scm releases: no remote configured to list refs from").
+release:
+  github: { owner: __OWNER__, name: __REPO__ }
+  prerelease: auto
+
 # Homebrew: use homebrew_casks (NOT the deprecated brews:). The cask is __BINARY__-cli,
 # but the binary inside the archive is __BINARY__ — so `binaries:` (plural list) is required,
 # and an unsigned arm64 binary is SIGKILL'd by Gatekeeper without the xattr postflight.

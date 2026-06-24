@@ -12,14 +12,21 @@ BIN_PATH="bin/$BIN"
 [[ -x "$BIN_PATH" ]] || make build >/dev/null 2>&1 || { echo "✗ cannot build $BIN for the surface check"; exit 1; }
 
 fail=0
-# Every resource declared in the manifest must be a reachable top-level command.
-for r in $(jq -r '.resources[].name' "$MANIFEST"); do
-  if "$BIN_PATH" "$r" --help >/dev/null 2>&1; then
-    printf "  ✓ surface: %s\n" "$r"
-  else
-    printf "  ✗ surface missing: %s\n" "$r"; fail=1
+# Every resource AND each of its declared verbs must be a reachable command — not just the
+# resource (a resource missing `delete` must fail, or the manifest isn't really enforced).
+while IFS=$'\t' read -r r verbs; do
+  if ! "$BIN_PATH" "$r" --help >/dev/null 2>&1; then
+    printf "  ✗ resource missing: %s\n" "$r"; fail=1; continue
   fi
-done
+  printf "  ✓ resource: %s\n" "$r"
+  for v in $verbs; do
+    if "$BIN_PATH" "$r" "$v" --help >/dev/null 2>&1; then
+      printf "      ✓ %s %s\n" "$r" "$v"
+    else
+      printf "      ✗ %s missing verb: %s\n" "$r" "$v"; fail=1
+    fi
+  done
+done < <(jq -r '.resources[] | "\(.name)\t\(.verbs // [] | join(" "))"' "$MANIFEST")
 
 if [[ $fail -ne 0 ]]; then echo "✗ CLI surface diverges from $MANIFEST"; exit 1; fi
 echo "✓ surface matches $MANIFEST"

@@ -3,7 +3,7 @@
   "binary": "__BINARY__",
   "base_url": "https://api.example.com/v1",
   "auth": "api-key-header",
-  "pagination": "cursor",
+  "pagination": "page",
   "resources": [
     { "name": "widgets",  "verbs": ["list", "get", "create", "update", "delete"], "key_fields": ["id", "name", "status"] },
     { "name": "gadgets",  "verbs": ["list", "get"], "read_only": true, "key_fields": ["id", "label"] }

@@ -2,7 +2,7 @@
 name: cliwright
 description: |
   Forge a complete, production-grade, agent-ready command-line tool (CLI) for any REST/HTTP API. Use when the user wants to build, scaffold, generate, or create a CLI; wrap an API in a command-line tool; turn an API into a CLI; or make a `gh`-style tool for a service. Produces a Go + Cobra + GoReleaser binary with OS-keyring auth, named profiles, an MCP server, an agent guard, CI/CD, and packaging — and drives the build to completion against a deterministic acceptance gate (`make verify`) so every quality criterion is provably met, not merely asserted. Triggers: "build a CLI for X", "scaffold a CLI", "wrap the X API in a CLI", "make a command-line tool for X", "API to CLI", "create a gh-style CLI".
-version: 0.1.0
+version: 0.2.0
 homepage: https://github.com/jjuanrivvera/cliwright
 license: MIT
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch

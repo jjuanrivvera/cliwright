@@ -36,7 +36,8 @@ done
 
 # Distribution & CI
 have "GoReleaser config present"         "test -f .goreleaser.yaml || test -f .goreleaser.yml"
-have "goreleaser check clean"            "command -v goreleaser >/dev/null && goreleaser check || true"
+# If goreleaser is installed it MUST pass; if absent, skip (don't fake a pass with '|| true').
+have "goreleaser check clean"            "! command -v goreleaser >/dev/null || goreleaser check"
 have "CI workflow present"               "test -f .github/workflows/ci.yml"
 have "release workflow present"          "test -f .github/workflows/release.yml"
 

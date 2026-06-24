@@ -6,7 +6,7 @@
     {
       "name": "cliwright",
       "source": "./",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "A wright of CLIs — forge a complete, production-grade CLI for any API, looped to a deterministic acceptance gate.",
       "homepage": "https://github.com/jjuanrivvera/cliwright",
       "keywords": ["cli", "code-generation", "scaffold", "api", "go", "ai-agent"]

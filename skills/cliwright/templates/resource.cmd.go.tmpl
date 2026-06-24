@@ -1,0 +1,17 @@
+// Template: commands/<resource>.go  (cliwright GOAL.md §8, generic-core / Pattern A)
+// Self-registers via init(). The generic builder stamps MCP read-only/write/destructive
+// annotations automatically; set readOnlyHints on any read-only custom verb in its file.
+package commands
+
+import "__MODULE__/internal/api"
+
+func init() {
+	registerResource(resourceSpec[api.Widget]{
+		Use: "widgets", Aliases: []string{"widget"}, Short: "Manage widgets",
+		New:         func(c *api.Client) *api.Resource[api.Widget] { return c.Widgets() },
+		Columns:     []string{"id", "name", "status"},
+		OrderFields: []string{"id", "name"},
+		ListFilters: []listFilter{{Flag: "status", Query: "status", Usage: "open,closed,draft"}},
+		// NoCreate/NoUpdate/NoDelete for read-only resources; Extra for custom actions.
+	})
+}

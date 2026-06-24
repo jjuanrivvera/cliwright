@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Local agent state (Ralph/goal loops write here)
+.claude/*.local.md
+DECISIONS.local.md
+
+# Scratch / generated output from test builds of the factory
+/scratch/
+/out/
+*.log

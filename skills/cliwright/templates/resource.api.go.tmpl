@@ -1,0 +1,14 @@
+// Template: internal/api/<resource>.go  (cliwright GOAL.md §8, generic-core / Pattern A)
+// Copy per resource; rename Widget/widgets. A new resource is JUST this + the command
+// file + a test — zero edits to shared code.
+package api
+
+// Widget — see <docs_url>/widgets
+type Widget struct {
+	ID     ID     `json:"id,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+// Widgets returns a typed handle to the /widgets resource.
+func (c *Client) Widgets() *Resource[Widget] { return NewResource[Widget](c, "widgets") }

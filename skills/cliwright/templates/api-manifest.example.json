@@ -1,0 +1,11 @@
+{
+  "_comment": "Spec-derived manifest (cliwright GOAL.md §11). Generated FROM the API's OpenAPI/docs, checked in, and enforced by scripts/spec-check.sh so the same API always yields the same CLI surface. Resources/order are derived from the spec, not chosen by taste.",
+  "binary": "__BINARY__",
+  "base_url": "https://api.example.com/v1",
+  "auth": "api-key-header",
+  "pagination": "cursor",
+  "resources": [
+    { "name": "widgets",  "verbs": ["list", "get", "create", "update", "delete"], "key_fields": ["id", "name", "status"] },
+    { "name": "gadgets",  "verbs": ["list", "get"], "read_only": true, "key_fields": ["id", "label"] }
+  ]
+}

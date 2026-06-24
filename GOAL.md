@@ -1,0 +1,634 @@
+# GOAL — Build a complete, production-grade CLI for any API
+
+> Paste this whole file after `/goal` (or invoke the `cliwright` skill). It is a
+> fully self-contained, model-agnostic brief that turns any HTTP API into a polished,
+> distributable command-line tool built to a single production-grade standard — defined
+> in full **in this document**. It depends on no other repository, codebase, or file:
+> every pattern is inlined here, and the §8 skeletons are the source of truth.
+> Fill in the **TARGET API** block, then execute the phases in order.
+
+---
+
+## TARGET API (fill this in — the only thing that changes per project)
+
+```yaml
+api_name:        # e.g. "Stripe", "Notion", "AdGuard Home"
+vendor_url:      # marketing/site URL
+docs_url:        # API reference root
+docs_llms_txt:   # llms.txt / OpenAPI / Postman collection URL if one exists (huge time-saver)
+base_url:        # e.g. https://api.example.com/v1   (+ sandbox/staging URL if any)
+auth:            # one of: api-key-header | basic(email:token) | bearer-token | oauth2-pkce
+rate_limit:      # known limits + which response headers expose quota (e.g. X-RateLimit-Remaining)
+pagination:      # one of: offset(start/limit) | page/per_page | cursor | Link-header
+resources:       # priority-ordered list of the resources to ship first, with key fields each
+                 #   e.g. customers(id,name,email,created), invoices(id,number,total,status)
+special_ops:     # long-running jobs, file up/download, fiscal/e-invoice, webhooks, bulk import — if any
+# Identity / distribution
+binary_name:     # e.g. "stripe" (the command users type)
+module_path:     # e.g. github.com/<owner>/<repo>
+repo_owner:      # GitHub owner/org
+homebrew_tap:    # e.g. <owner>/homebrew-<repo>
+license:         # default MIT
+```
+
+**Research first, ask second.** Everything about the *API itself* (auth, base URL,
+pagination, rate-limit headers, resources, fields, special ops, JSON quirks) is your
+homework — fetch the docs/OpenAPI and fill it in yourself. Do **not** ask me what the
+docs already answer. Only ask me what the web cannot know: my environment, my
+preferences, and my distribution identity (see §0). If the TARGET block + docs give you
+everything, skip questions and start building.
+
+---
+
+## 0. Requirements: research first, ask only what the web can't answer
+
+**Step 1 — Auto-resolve from the API's own docs (don't ask me these).** Fetch `docs_url` /
+`docs_llms_txt` / OpenAPI / Postman collection and fill in every field you can. These are
+*facts about the API*, not preferences — determine them yourself:
+
+- **Auth model** → token storage + the `auth` UX. One of: `api-key-header` /
+  `basic` (email:token, Alegra) / `bearer` / `oauth2-pkce` (refresh + local/OOB, Canvas).
+- **Base URL** pattern + sandbox/staging URL.
+- **Pagination model** → drives the `--all` walker: offset(start/limit) / page(per_page) /
+  cursor(nextCursor) / Link-header, plus the exact param names.
+- **Rate-limit headers** → if they exist, adaptive limiter; if not, fixed RPS.
+- **Resources + key fields**, and which are read-only or enterprise/plan-gated.
+- **Special ops** → custom actions, file up/download, long-running jobs, webhooks.
+- **JSON quirks** → IDs as string *and* number? money fields? `{id,name}` refs? fields
+  that are sometimes an object, sometimes an array? These drive the flexible JSON types.
+- **Binary-name collisions** on PATH → propose an alternative (e.g. `<name>ctl`); don't ask.
+
+If the docs are ambiguous or contradictory, **state the assumption you're making** and
+proceed — don't turn it into a question.
+
+**Step 2 — Ask me only what the web cannot know** (batch into ≤4 questions, skip any
+already answered in the TARGET block):
+
+- **My environment** — which instance/host/deployment I use and its base URL
+  (e.g. self-hosted vs Cloud), since that's not a public fact.
+- **My preferences/scope** — which resources to ship first, read-only vs full CRUD,
+  multi-instance/profiles vs single-profile.
+- **My distribution identity** — repo owner, module path, Homebrew tap name, license,
+  and whether to package a Claude Code skill/plugin.
+
+If everything needed is already present, **skip the questions and start building.**
+
+Keep a checked-in API manifest derived from the spec so the CLI surface can be diffed
+against it (`make spec-check`).
+
+---
+
+## 1. The standard (non-negotiable practices)
+
+Default stack: **Go + Cobra + Viper + GoReleaser** (the practices below assume it).
+The principles transfer to other languages, but unless I say otherwise, build it in Go.
+
+**Every CLI you produce MUST have:**
+
+- **A generic core, thin resources.** Adding a resource is ~3 small files and
+  **zero edits to shared code**. The CRUD/pagination/retry/output logic is written
+  once, generically, and reused for every resource.
+- **Output formats: table (default), json, yaml, csv.** One renderer for all
+  resources, driven by JSON normalization. Global `-o/--output`. Table is colored
+  only on a TTY; honor `NO_COLOR` and `--no-color`. `--columns` selects fields;
+  `--quiet` suppresses chatter.
+- **Config precedence: flag > env > config file > default.** Config at
+  `~/.<binary>-cli/config.yaml` (or `$XDG_CONFIG_HOME`). Env overrides namespaced
+  `<BINARY>_*` (e.g. `STRIPE_TOKEN`, `STRIPE_OUTPUT`, `STRIPE_PROFILE`).
+  Named **profiles**/instances for multi-account.
+- **Secrets never in plaintext.** Tokens live in the OS keyring
+  (`zalando/go-keyring`: macOS Keychain / Linux Secret Service / Windows Cred Mgr),
+  with an encrypted-file fallback. Never write a token to config-in-repo, code, or
+  commit messages. Redact `Authorization` in dry-run unless `--show-token`.
+- **Resilient client.** Exponential backoff with jitter; retry 429 + 5xx + transient
+  network errors; **only auto-retry idempotent methods** (GET/HEAD/PUT/DELETE) — never
+  silently retry POST/PATCH. Adaptive rate limiting that reads quota headers and slows
+  as the budget depletes; halve rate on a 429.
+- **Actionable errors.** A typed `APIError{StatusCode, Code, Message, Details, Body}`
+  whose `Error()` appends a **hint** keyed by status (401→"run `<bin> auth login`",
+  403→"check permissions", 404→"verify id with `list`", 429→"rate limited — slow down",
+  5xx→"server error, usually transient"). Map any domain-specific error codes to remedies.
+- **`--dry-run`** prints the **equivalent `curl`** (shell-escaped, header-redacted) and
+  performs no request. Indispensable for debugging and for teaching.
+- **Cancellable on Ctrl-C.** `main` builds a `signal.NotifyContext(ctx, SIGINT, SIGTERM)`
+  and calls `rootCmd.ExecuteContext(ctx)`; **every** call site uses `cmd.Context()`, never
+  `context.Background()`. Then a Ctrl-C cancels in-flight `--all` pagination, retry backoff,
+  and multi-step loops mid-request. (Easy to forget — a fresh cobra app defaults to
+  `context.Background()` everywhere, so this is a deliberate wiring step, not free.)
+- **AI-agent-ready by construction.** Every resource command carries MCP tool annotations
+  (read-only / write / destructive) set **once** in the generic builder. An `mcp` server
+  exposes the commands as MCP tools and an `agent guard` turns the same annotations into
+  host safety rules — see §3b. Build this in from the start; retrofitting annotations onto
+  dozens of commands later is tedious.
+- **File-reading features are path-confined.** If the CLI ever reads a local file named by
+  *data* (imports, externalized code, a `$ref` inside a record), confine the read to its
+  base directory: reject absolute paths and `..` escapes **and** resolve symlinks before
+  reading. Otherwise a crafted input file is an arbitrary-local-file-read — and, on a
+  command that then uploads, an exfiltration primitive. Namespace any sentinel you embed in
+  user data (e.g. `$<binary>_file`, not bare `$ref`) so it can't collide with a real field.
+- **Standard meta-command set** (every CLI ships these — see Phase 3).
+- **Comments explain WHY, not WHAT.** `gofmt -s` clean; passes `golangci-lint` and
+  `go vet`; security-clean under `gosec` + `govulncheck`.
+- **≥80% test coverage**, enforced in CI. `httptest` mock servers; table-driven tests;
+  fuzz the flexible JSON decoders; test failure paths, not just happy paths.
+
+---
+
+## 2. Architecture (the blueprint)
+
+```
+cmd/<binary>/main.go        entry point; alias expansion BEFORE cobra.Execute(); ldflags version vars
+commands/
+  root.go                   global persistent flags, getAPIClient(), render(), PersistentPreRun (color/update)
+  generic.go                generic CRUD + custom-action command builders (registerResource)
+  auth.go config.go init.go doctor.go completion.go alias.go api.go version.go
+  mcp.go                    registers the `mcp` subtree via ophis.Command (§3b)
+  agent.go agent_hosts.go   `agent guard` — classify the tree + emit host safety config (§3b)
+  <resource>.go             one per resource; self-registers via init()
+  internal/options/         (optional, Pattern B style) option structs with Validate()
+  internal/logging/         (optional) structured command logging
+internal/
+  api/
+    client.go               auth, retries, adaptive rate limit, dry-run, GetJSON/Do
+    resource.go             generic Resource[T]: List/ListAll/Get/Create/Update/Delete/Action
+    pagination.go           the API's pagination model; decodeList normalizes data/results/rows wrappers
+    types.go                flexible JSON types: ID, Int, Money, Ref/Refs, StringOrSlice
+    errors.go               APIError + hint mapping
+    retry.go ratelimit.go   backoff + adaptive limiter
+    <resource>.go           one per resource: struct(s) + Client accessor (e.g. c.Widgets())
+  auth/                     keyring + encrypted-file token storage (+ OAuth2/PKCE if needed)
+  config/                   viper profiles + env overrides + precedence
+  output/                   table/json/yaml/csv formatter
+  version/                  build metadata (set via ldflags)
+tools/gendocs/              generates docs/commands/*.md from the cobra tree
+```
+
+**Two resource patterns. Pick one by the decision rule in §11 (Determinism) — not by taste —
+and stay consistent across the whole CLI:**
+
+- **Pattern A — Generic-core (default; for uniform REST CRUD APIs).**
+  `internal/api/resource.go` exposes `Resource[T any]` with
+  `List(ctx, ListParams) / ListAll / Get(ctx, id) / Create / Update / Delete /
+  Action(ctx, id, action, body, out)`. `commands/generic.go` builds the
+  list/get/create/update/delete subcommands from a `resourceSpec[T]{Use, Aliases,
+  Short, New, Columns, OrderFields, ListFilters, NoCreate/NoUpdate/NoDelete, Extra}`.
+  A new resource = a type + a `Client` accessor + one `registerResource(...)` in `init()`.
+
+- **Pattern B — Service-layer (only for irregular APIs** with per-resource includes,
+  masquerade, or special non-CRUD endpoints). Each resource gets a
+  `XxxService struct{ client *Client }` with explicit methods + `ListXxxOptions`, plus a
+  command file using an option struct with `Validate()` and structured logging.
+
+**Flexible JSON types (`internal/api/types.go`)** — these prevent the most common
+real-world API breakages, so include them by default:
+- `ID` — unmarshals from string **or** number, always marshals as string (no precision
+  loss above 2^53; consistent table rendering).
+- `Money` — stored/emitted as exact decimal **text**, never `float64` (no rounding).
+- `Ref`/`Refs` — `{id,name}` nested objects; `Refs` accepts a single object **or** an array.
+- `StringOrSlice` — accepts `"x"` or `["x","y"]`.
+- Unknown JSON fields are ignored, so structs need not be exhaustive.
+
+---
+
+## 3. Standard meta-command set (build these regardless of API)
+
+| Command | UX |
+|---|---|
+| `auth login` | Interactive (or flag-driven) credential capture; **verify against a `whoami`-style endpoint**; store token in keyring, non-secret bits in config. OAuth2+PKCE with `--mode auto\|local\|oob` if applicable. |
+| `auth logout` | Remove stored token(s) for the active profile/instance. |
+| `auth status` (alias `whoami`) | Show profile/instance, base URL, identity, auth validity. |
+| `config path / view / set / use <profile> / list-profiles` | Inspect & edit config; **redact secrets** in `view`. |
+| `init` / `setup` | First-run interactive wizard: pick base URL, capture creds, write config + keyring, smoke-test. |
+| `doctor [--json]` | Diagnostics: config present, creds resolvable, connectivity, auth works, clock, version. Exit non-zero on failure. |
+| `completion [bash\|zsh\|fish\|powershell]` | Shell completion; ship completions in archives/packages. Add dynamic completion for `--columns`/resource names. |
+| `alias set/list/remove` | User-defined command aliases, expanded **before** cobra parses; never shadow built-ins. |
+| `api <METHOD> <PATH> [-d body] [-q k=v]` | Raw authenticated request escape hatch (honors `--dry-run`, `--output`). |
+| `version [--json] [--check]` | Print version/commit/date (from ldflags); `--check` compares against latest GitHub release. |
+| `mcp [start\|stream\|tools\|claude\|cursor\|vscode]` | Run the CLI as an **MCP server** so AI agents drive the API; auto-exposes commands as annotated tools and installs host config (see §3b). |
+| `agent guard --host <claude-code\|codex\|opencode>` | Generate **agent-safety** config that blocks destructive ops for an agent driving the CLI (see §3b). |
+| `update [--check]` *(optional)* | Self-update from GitHub releases. |
+| `repl` / `shell` *(optional)* | Interactive session with history, context vars, completion. |
+
+Global persistent flags: `-o/--output`, `--profile`/`--instance`, `--base-url`,
+`--dry-run`, `--show-token`, `-v/--verbose`, `--no-color`, `--columns`, `--quiet`,
+plus list flags `--all`, `--limit`, `--sort`, `--filter`.
+
+---
+
+## 3b. Expose the CLI to AI agents (MCP server + agent guard)
+
+Modern reference CLIs ship an **MCP server** and an **agent guard**. Both are nearly free
+because they read the command tree you already built — *if* you annotated it (§1).
+
+**MCP server (`commands/mcp.go`).** Use `github.com/njayp/ophis` (a Cobra→MCP bridge over
+the official `modelcontextprotocol/go-sdk`). One `init()` registers the whole `mcp` subtree:
+
+```go
+rootCmd.AddCommand(ophis.Command(&ophis.Config{
+    ToolNamePrefix: "<short>",   // tools become <short>_<resource>_<verb>
+    Selectors: []ophis.Selector{{
+        CmdSelector:           ophis.ExcludeCmdsContaining("agent","auth","config","alias","init","skills","doctor"),
+        InheritedFlagSelector: ophis.ExcludeFlags("show-token","profile","api-key","base-url"),
+    }},
+}))
+```
+
+- ophis walks the tree, auto-derives a tool per runnable leaf, and **replays the cobra
+  command** on invocation — so every tool reuses the same client, keyring, profiles, and
+  `--dry-run`. No separate handler layer.
+- **Never expose secret/instance flags** (`--api-key`, `--show-token`, `--profile`,
+  `--base-url`): the server uses whatever profile is active at startup, so an agent can't
+  switch instances or read the key.
+- Exclude setup/meta commands (`auth`, `config`, `init`, `alias`, `skills`, `agent`); a
+  registry test (`TestMCPExcludesSetupCommands`) locks the surface.
+- In the generic builder, tag each subcommand with ophis hint annotations so hosts gate
+  writes: `readOnlyHints` (list/get/search/diff/schema/…), `writeHints` (create/update/…),
+  `destructiveHints` (delete). Mark **unannotated custom verbs destructive by default**;
+  read-only customs opt back in by calling `readOnlyHints` in their resource file.
+
+**Agent guard (`commands/agent.go` + `agent_hosts.go`).** `agent guard --host
+<claude-code|codex|opencode> [--all-writes] [--write]` classifies every API command (using
+the same `openWorldHint`/`readOnlyHint` annotations) into read / write / irreversible, then
+emits host safety config: hard-block irreversible verbs (delete, plus any domain-specific
+irreversible ops like void/emit), make ordinary writes require approval, leave reads free.
+For Claude Code it writes a `PreToolUse` hook + `settings.json` deny/ask rules; for Codex a
+read-only sandbox `config.toml`; for OpenCode `opencode.json` permissions. It derives from
+the **live tree**, so it stays correct across upgrades. Exclude the guard from the MCP
+surface so an agent can't disable its own rails. Note the binary name (Bash patterns) may
+differ from the MCP tool prefix (tool patterns) — thread both. MCP-only operation is the
+hard guarantee; the Bash hook is best-effort (defeats quote/backslash tricks, not variable
+indirection).
+
+---
+
+## 3c. Beyond the API (value-adds that differentiate)
+
+Once the CRUD surface is complete, the highest-leverage additions go *past* the raw API —
+they were the biggest differentiators in practice:
+
+- **Declarative GitOps** for the central resource: `apply --dir <dir>` reconciles a
+  directory of files (create / update / skip-unchanged via a canonical compare / `--prune`
+  drift) with a `--dry-run` plan; `lint` (rules grounded in the API's own schema, not
+  invented; exits non-zero as a CI gate), `diff`, and `convert` (JSON↔YAML, with long code
+  fields **externalized** to sibling files for clean review). Match by a **stable id** where
+  one exists; if you must match by mutable name, detect duplicates and skip them rather than
+  acting on an arbitrary one.
+- **Backup / restore** the instance to a git-friendly directory (YAML + externalized code);
+  a partial backup must record failures and **exit non-zero**, never masquerade as success.
+- **Cross-instance promote/sync** between profiles (`sync <id> --to <profile>`) — the
+  multi-instance payoff; the official/competing single-instance tools can't do it.
+- **Search across resources by content** (by node/field/credential), which the vendor UI
+  usually can't.
+
+These are optional, but a CLI that only mirrors the API is commoditized; these are what make
+it worth installing over `curl` or the first-party tool.
+
+---
+
+## 4. Build procedure (execute in order; commit per phase)
+
+**Phase A — Scaffold.** `go mod init <module_path>`; create the directory tree;
+add `Makefile`, `.golangci.yml` (v2), `.githooks/pre-commit`, `.gitignore`, `LICENSE`,
+`AGENTS.md` with `CLAUDE.md`→`AGENTS.md` symlink. Wire version vars + ldflags.
+
+**Phase B — Client core.** `internal/api/{client,resource,pagination,types,errors,retry,ratelimit}.go`.
+Implement auth, dry-run curl, adaptive rate limit, idempotent retry, the generic
+`Resource[T]` (or service base), and the flexible JSON types. Unit-test the core
+**once, thoroughly**, including fuzz tests for the JSON types.
+
+**Phase C — Cross-cutting UX.** `internal/{config,auth,output,version}` and
+`commands/root.go` (global flags, `getAPIClient()`, `render()`, `PersistentPreRun`).
+
+**Phase D — Meta commands.** Phase 3 table: `auth`, `config`, `init`, `doctor`,
+`completion`, `alias`, `api`, `version`.
+
+**Phase E — Resource loop.** For each resource in `resources` (priority order), add the
+**3 files** (api type + command registration + tests). Test only what is *unique* to the
+resource (field quirks, custom actions) — generic CRUD is already covered. Repeat until
+the priority surface is complete. The generic builder already stamps each subcommand with
+MCP read-only/write/destructive annotations (§3b); set `readOnlyHints` on any read-only
+custom verb in its resource file.
+
+**Phase E2 — Agent surface.** Add `commands/mcp.go` (ophis) and `commands/agent.go` +
+`agent_hosts.go` (§3b). Lock the tool surface and the read/write/irreversible classification
+with tests (`TestMCPExcludesSetupCommands`, `TestClassifyAPICommands`, per-host guard tests).
+
+**Phase E3 — Beyond the API (optional, high-leverage).** Add the differentiators in §3c that
+fit this API: declarative `apply`/`lint`/`diff`/`convert`, backup/restore, cross-instance
+`sync`, content search.
+
+**Phase F — Tests & gates.** `httptest` helper `newTestClient(t, handler)`; table-driven;
+`require` for fatal/setup, `assert` otherwise; fuzz the decoders; `make check`
+(fmt + vet + lint + gosec + test) green; coverage ≥80%.
+
+**Phase G — Docs.** `tools/gendocs/main.go` generates `docs/commands/*.md` from the cobra
+tree (`make docs-gen`); MkDocs Material site; `README.md` with install + quickstart.
+
+**Phase H — Distribution & CI/CD.** Phases 5 & 6 below.
+
+**Phase I — Packaging.** Claude Code plugin + skill (Phase 7 below) if distributing there.
+
+Make small, conventional commits (`feat:`, `fix:`, `docs:`, `chore:`). Default branch
+model: `feature/*`/`fix/*` → `develop` → tag on `main`.
+
+---
+
+## 5. Distribution (`.goreleaser.yaml` + Makefile)
+
+**GoReleaser** must produce:
+- **Builds**: `CGO_ENABLED=0`; GOOS `linux,darwin,windows` × GOARCH `amd64,arm64`
+  (ignore windows/arm64). ldflags inject version/commit/date.
+- **Archives**: tar.gz (unix) / zip (windows); include `README`, `LICENSE`, and
+  generated shell completions.
+- **Homebrew tap** (`homebrew_casks:`, **not** the deprecated `brews:`): auto-commit the
+  cask to `homebrew_tap` on release (needs `HOMEBREW_TAP_TOKEN` secret, repo scope).
+  When the cask name (`<binary>-cli`) differs from the binary inside the archive
+  (`<binary>`), set `binaries: [<binary>]` (the **plural list** — `binary:` is deprecated
+  and fails `goreleaser check`) or the symlink points at the wrong name and `brew install`
+  can't find the binary. On macOS/arm64 an unsigned binary is **SIGKILL'd by Gatekeeper**;
+  add a cask `postflight`/`hooks.post.install` that runs
+  `xattr -dr com.apple.quarantine "#{staged_path}/<binary>"`.
+- **Scoop** (`scoops:`): the target bucket repo (`scoop-<repo>`) **must already exist** —
+  GoReleaser pushes to it but won't create it.
+- **Linux packages** (`nfpms:`): deb/rpm/apk → `/usr/bin` + completions to standard paths.
+- **Docker** (optional): push `ghcr.io/<owner>/<bin>:{version,major,latest}` with OCI labels.
+- **Supply chain**: `checksums.txt`; **cosign** keyless signing (pin cosign v2.6.3 for v2
+  bundle format; keyless needs CI OIDC — `permissions: id-token: write`); **syft** SBOMs.
+- **Changelog**: group by `^feat`/`^fix`/`^perf`; exclude docs/test/chore/merge.
+- **Run `goreleaser check` in CI** (a step in `ci.yml`, not just the snapshot job) so a
+  deprecated/invalid config breaks on PR, not at tag time when the release is half-done.
+
+**Makefile** (standard targets): `build install uninstall run dev check fmt vet lint
+tidy test test-race test-coverage cover-check docs-gen docs-serve docs-build snapshot
+setup-hooks clean`. `make check` = fmt + vet + lint + test (the local gate).
+
+> **Install the pre-commit hook, don't just ship it.** Shipping `.githooks/pre-commit`
+> + a `make setup-hooks` target is not enough — until someone runs it (sets
+> `core.hooksPath=.githooks`) the hook catches nothing and bad code reaches CI.
+> Run `make setup-hooks` once at repo setup. Make the hook fast: gofmt/vet/lint/
+> `go test -short -race`, and **skip the Go gate when no `.go`/`go.mod`/`go.sum` is
+> staged** so docs-only commits stay instant. CI remains the source of truth; the
+> hook is just a local pre-flight that blocks the obvious breakage.
+
+**Pre-commit hook**: gofmt (staged), go vet, golangci-lint (skip gracefully if absent),
+`go test -short -race`.
+
+---
+
+## 6. CI/CD (`.github/workflows/`)
+
+- **`ci.yml`** (push to main/develop + PR): `lint` (gofmt, vet, golangci-lint, **+ a
+  docs-gen drift check**: run `make docs-gen` and `git diff --exit-code -- docs/commands`),
+  `security` (govulncheck **blocking** via `go install golang.org/x/vuln/cmd/govulncheck@latest`;
+  gosec **gating on high-severity** via the **prebuilt `securego/gosec@vX.Y.Z` action**
+  with `args: '-severity high -confidence medium ./...'`). **Do NOT `go install` a pinned
+  *old* scanner version** — an old gosec/govulncheck won't compile under a newer Go toolchain
+  (the `x/tools` `invalid array length -delta*delta` failure); use the published gosec *action*
+  (ships a prebuilt binary) and `govulncheck@latest` (its vuln DB is fetched live, so the
+  binary version barely affects determinism). Standalone gosec honors `#nosec G404` (not
+  golangci's `//nolint:gosec`), and for a CLI it false-positives on **G404** (non-crypto jitter
+  RNG) and **G703/G304** (writing to a user's own `--out`/input path) — suppress those with a
+  justified `#nosec`. `test` matrix (ubuntu/macos/windows; `-race`; coverage gate ≥80% on
+  ubuntu; codecov), `build` (`goreleaser check` then GoReleaser snapshot, skip sign/sbom/docker).
+- **`release.yml`** (tag `v*`): GoReleaser full pipeline (Buildx, GHCR login, cosign, syft,
+  `release --clean`).
+- **`docs.yml`** (push to main touching docs/commands): regenerate refs, `mkdocs gh-deploy --force`.
+- **`dependabot.yml`**: weekly gomod + github-actions, grouped.
+- Repo hygiene: `CHANGELOG.md` (Keep a Changelog), `SECURITY.md` (supported versions +
+  private reporting + token-handling policy), `CODE_OF_CONDUCT.md`, `.github/ISSUE_TEMPLATE/*`,
+  `pull_request_template.md`, `codecov.yml`.
+- Optional: `claude-code-review.yml` + `claude.yml` for automated PR review / `@claude` mentions.
+
+---
+
+## 7. Package as a Claude Code plugin + skill (optional but recommended)
+
+`.claude-plugin/plugin.json`:
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "<binary>-cli",
+  "version": "<semver, synced to releases>",
+  "description": "<one-line capability summary>",
+  "author": { "name": "<you>", "url": "https://github.com/<owner>" },
+  "homepage": "https://github.com/<owner>/<repo>",
+  "repository": "https://github.com/<owner>/<repo>",
+  "license": "MIT",
+  "skills": "./skills",
+  "keywords": ["<api>", "cli", "ai-agent"]
+}
+```
+
+`.claude-plugin/marketplace.json`: `{ "$schema": ".../marketplace.json", "name": "<short>",
+"owner": {...}, "plugins": [ { "name": "<binary>-cli", "source": "./", "version": "...",
+"description": "...", "homepage": "...", "keywords": [...] } ] }`.
+
+`skills/<binary>-cli/SKILL.md` — frontmatter then a usage guide:
+```yaml
+---
+name: <binary>-cli
+description: <long "use this when…" trigger description — what the CLI does and when to reach for it>
+version: <semver>
+homepage: https://github.com/<owner>/<repo>
+license: MIT
+allowed-tools: Bash(<binary>:*)
+metadata: {"openclaw":{"category":"<domain>","emoji":"<emoji>","requires":{"bins":["<binary>"],"env":["<ENV_TOKENS>"]},"install":[{"kind":"brew","formula":"<owner>/<repo>/<binary>-cli","bins":["<binary>"]},{"kind":"go","package":"<module_path>/cmd/<binary>@latest","bins":["<binary>"]}]}}
+---
+```
+SKILL.md body: Prerequisites/install → "prefer the CLI over raw curl" rationale →
+auth/config setup → golden rules → workflow (auth → discover → act → verify) → command
+cheatsheet → troubleshooting. Add `skills/<binary>-cli/references/*.md` deep-dives
+(`auth-and-config.md`, `<api>-commands.md`, `output-and-filtering.md`).
+If the repo keeps skills under `.agents/skills/`, symlink `.claude/skills → ../.agents/skills`.
+
+---
+
+## 8. Reference skeletons (generic-core style)
+
+`internal/api/widgets.go`:
+```go
+package api
+
+// Widget — see <docs_url>/widgets
+type Widget struct {
+    ID     ID     `json:"id,omitempty"`
+    Name   string `json:"name,omitempty"`
+    Status string `json:"status,omitempty"`
+}
+
+// Widgets returns a typed handle to the /widgets resource.
+func (c *Client) Widgets() *Resource[Widget] { return NewResource[Widget](c, "widgets") }
+```
+
+`commands/widgets.go`:
+```go
+package commands
+
+import "<module_path>/internal/api"
+
+func init() {
+    registerResource(resourceSpec[api.Widget]{
+        Use: "widgets", Aliases: []string{"widget"}, Short: "Manage widgets",
+        New:         func(c *api.Client) *api.Resource[api.Widget] { return c.Widgets() },
+        Columns:     []string{"id", "name", "status"},
+        OrderFields: []string{"id", "name"},
+        ListFilters: []listFilter{{Flag: "status", Query: "status", Usage: "open,closed,draft"}},
+        // NoCreate/NoUpdate/NoDelete for read-only resources; Extra for custom actions.
+    })
+}
+```
+
+`internal/api/widgets_test.go`:
+```go
+func TestWidgets_List(t *testing.T) {
+    c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+        assert.Equal(t, http.MethodGet, r.Method)
+        assert.Equal(t, "/widgets", r.URL.Path)
+        w.Header().Set("Content-Type", "application/json")
+        _, _ = w.Write([]byte(`[{"id":"1","name":"Widget A","status":"open"}]`))
+    })
+    got, err := c.Widgets().List(context.Background(), ListParams{})
+    require.NoError(t, err)
+    require.Len(t, got, 1)
+    assert.Equal(t, ID("1"), got[0].ID)
+}
+```
+
+---
+
+## 9. Definition of Done (acceptance checklist)
+
+> This checklist is the **gate**, not a vibe check. §12 wires every item below into one
+> `make verify` command (a deterministic check per atomic item + a judge rubric for the few
+> genuinely subjective ones). The loop's completion promise may fire **only** when
+> `make verify` exits `0`. Split compound items (e.g. the output-formats line) into atomic
+> checks — one per format, one per meta-command.
+
+- [ ] `make check` green: gofmt-clean, vet-clean, golangci-lint pass, gosec+govulncheck clean, tests pass.
+- [ ] Coverage ≥ 80%, enforced in CI. Flexible JSON types are fuzz-tested.
+- [ ] All priority `resources` shipped with list/get/create/update/delete (or read-only) + per-resource tests.
+- [ ] Output works in table/json/yaml/csv; `--columns`, `--filter`, `--sort`, `--all`, `--limit` work.
+- [ ] Auth flow works end-to-end; tokens in keyring; `auth status`/`doctor` verify against the live API.
+- [ ] `--dry-run` prints a correct, copy-pasteable curl with the secret redacted.
+- [ ] Retry honors idempotency; rate limiter reads quota headers; 429 handled gracefully.
+- [ ] Ctrl-C cancels in-flight work (`signal.NotifyContext` + `ExecuteContext`; `cmd.Context()`
+      everywhere, no stray `context.Background()`).
+- [ ] Any file-reading-from-data feature is path-confined (no `..`/absolute/symlink escape).
+- [ ] Meta commands present: auth, config, init/setup, doctor, completion, alias, api, version.
+- [ ] **MCP server** (`mcp`) exposes commands as annotated tools (read-only/write/destructive),
+      excludes setup/secret commands, and reuses the same client/keyring/dry-run.
+- [ ] **Agent guard** (`agent guard --host …`) generates host safety config from the live tree.
+- [ ] GoReleaser builds all targets; `goreleaser check` is clean; Homebrew cask
+      (`homebrew_casks` + `binaries:`) auto-updates; checksums + cosign + SBOM present.
+- [ ] CI (`ci.yml`), release (`release.yml`), docs (`docs.yml`), dependabot configured.
+- [ ] Docs: generated command reference + README quickstart; AGENTS.md present.
+- [ ] (If distributing via Claude Code) plugin.json + marketplace.json + SKILL.md + references shipped.
+- [ ] Hygiene: CHANGELOG, SECURITY, LICENSE, issue/PR templates. No secret ever committed.
+
+---
+
+## 10. Process & verification (how to actually ship it well)
+
+Building the surface is half the job; these steps caught the real bugs and raised quality:
+
+- **Live-test the surface against a real instance** before release — mocks miss real-API
+  behavior. Do it safely: create only disposable, uniquely-named resources, never touch
+  existing data, and never run a non-dry-run destructive/prune against production. This is
+  what caught a dry-run that short-circuited its own read and an apply that mis-detected
+  "unchanged".
+- **Adversarial multi-agent review + rating** before (and after) a release: fan out
+  reviewers by dimension (correctness, security, resilience, API-fidelity, tests), then
+  **verify each finding against the code** to drop false positives, and fix the confirmed
+  set. A dual-lens rating (strict auditor + pragmatic maintainer) surfaces the gaps a single
+  pass misses — e.g. a missing cancellable context, an unescaped id in a hand-written verb,
+  a float64 id-precision loss, report-only security gating.
+- **Demo GIF via VHS** (`.demo/demo.tape`): record the real binary against a **local mock**
+  with seeded fake data (not a real/private instance), so the public GIF is clean and
+  reproducible. Do all setup (env + mock) **outside** the tape (or `Hide` leaks frame 0);
+  start the recording with `Ctrl+L`.
+- **Honest comparison docs** vs the first-party / competing tools: a "where the official
+  tool is genuinely better" section builds more trust than a one-sided pitch.
+- **Ship completely**: doc site (MkDocs), generated command reference, Homebrew/Scoop +
+  deb/rpm/apk, cosign + SBOM, and the Claude skill/plugin — a tagged release that `brew
+  upgrade` actually serves, verified end-to-end.
+
+---
+
+## 11. Determinism rules (same API in → same CLI out)
+
+A generator's value is reproducibility: two runs on the same spec must converge on the same
+surface. Remove the free choices a loop would otherwise amplify into drift.
+
+- **Pattern choice is a rule, not a judgment.** Use **Pattern A (generic-core) by default.**
+  Switch to **Pattern B (service-layer)** *only* when the spec shows a documented trigger:
+  per-resource `include`/expansion params, user impersonation/masquerade, or endpoints that
+  aren't CRUD-on-a-resource. Record the trigger that forced Pattern B in `DECISIONS.md`.
+- **Derive the resource set and order from the spec, not from taste.** Resources = every
+  collection in the OpenAPI/docs; order them deterministically (by the spec's tag order,
+  then alphabetical). Flag read-only ones from the spec (no documented write verbs). Don't
+  hand-pick "the important ones" — ship the full priority surface; the human's TARGET
+  `resources` only reorders priority, it does not change membership.
+- **Pin every assumption.** When the docs are ambiguous, write the assumption to a
+  checked-in `DECISIONS.md` (one line each: question → decision → why) and read it back on
+  every iteration. Never silently re-decide; the loop must see the same decisions each pass.
+- **The spec-derived manifest is a hard gate.** Generate a checked-in `api-manifest.json`
+  from the spec listing resources, fields, and verbs. `make spec-check` fails when the built
+  CLI surface diverges from it. This is the anchor that keeps "done" meaning the *same*
+  surface every run.
+- **Stable output.** Canonical field order (struct/JSON-tag order), stable default
+  `--columns`, deterministic table/json/yaml/csv rendering — never rely on map-iteration order.
+
+---
+
+## 12. Acceptance gate (`make verify`) — the loop's exit condition
+
+The build is finished only when one command proves it. Wire §9 into a single gate:
+
+```make
+verify: check spec-check          ## the whole acceptance gate; exit 0 == done
+	go test ./... -coverprofile=coverage.out
+	./scripts/cover-check.sh 80          # coverage ≥ 80% or fail
+	./scripts/dod-check.sh               # one concrete check per atomic §9 item
+	./scripts/judge.sh                   # rubric for the few subjective items
+```
+
+- **`make check`** — fmt + vet + golangci-lint + gosec + govulncheck + tests (the §5/§6 gate).
+- **`spec-check`** — built surface == `api-manifest.json` (§11).
+- **`dod-check.sh`** — a deterministic check per atomic §9 item: greps/smoke-tests that
+  `mcp.go`, `agent.go`, each of the four output formats, the `--dry-run` curl,
+  `signal.NotifyContext`, keyring storage, and every meta-command exist and behave. Exits
+  non-zero on any miss.
+- **`judge.sh`** — for criteria a grep can't prove (*errors carry actionable hints*,
+  *comments explain WHY*, *help text has examples*), an LLM rubric scores them and fails
+  below threshold. Keep this set small; prefer a deterministic check whenever one exists.
+
+**Completion-promise binding (the anti-cheat).** When driven by `/goal` (or any Ralph-style
+loop), the completion promise (e.g. `<promise>CLI COMPLETE</promise>`) may be emitted **only
+after `make verify` exits `0`**. Do **not** emit a false promise to escape the loop — not
+when stuck, not when "close enough," not for any reason. If the gate fails, read the failure,
+fix the smallest thing, and iterate. `make verify` is the single source of truth for "done
+and high."
+
+---
+
+## Guardrails
+
+- **Auth** and **pagination** are structural — *determine* them from the docs/OpenAPI,
+  don't invent them and don't ask me. Only ask if the docs genuinely don't specify.
+- Read the API's OpenAPI/llms.txt for field names; never fabricate fields.
+- Write the generic core once; never copy-paste CRUD per resource.
+- Keep resource files thin; if you're editing shared code to add a resource, the
+  abstraction is wrong — fix the abstraction.
+- Never print or commit a real token; redact by default in dry-run and `config view`.
+- Never expose secret/instance flags (`--api-key`, `--show-token`, `--profile`, `--base-url`)
+  to the MCP tool surface, and exclude the `agent guard` command from it — an agent must not
+  read the key, switch instances, or disable its own rails.
+- Wire `cmd.Context()` from `ExecuteContext` through every call; a stray `context.Background()`
+  silently breaks Ctrl-C cancellation. Annotate every resource command (read-only/write/
+  destructive) in the generic builder, not per-command later.
+- **Same API in → same CLI out:** choose the resource pattern by §11's rule, derive the
+  resource set/order from the spec, and pin every assumption in `DECISIONS.md` — never
+  re-decide per iteration.
+- **Done is what `make verify` proves, not what you assert.** Emit a loop completion promise
+  only after the gate exits `0`; never a false one.
+- Comments explain WHY. Match the surrounding code's style.

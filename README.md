@@ -68,6 +68,25 @@ make verify   # make check + coverage + spec-check + Definition-of-Done checklis
 | **`make verify`** | The deterministic gate the completion promise binds to |
 | **`cli-builder` agent** | Runs the long multi-phase build in its own context window |
 
+## Development
+
+The plugin manifests (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`)
+are validated against the vendored schemastore schemas in `.claude-plugin/schemas/`,
+plus structural checks that every referenced component resolves and carries the frontmatter
+Claude Code needs to load it.
+
+```bash
+python3 scripts/validate-plugin.py   # run the same check CI runs
+./scripts/install-hooks.sh           # enable the pre-commit hook (sets core.hooksPath)
+```
+
+CI runs the validator on every push and PR (`.github/workflows/validate.yml`). The full
+schema layer needs `jsonschema` (`pip install jsonschema`); without it the hook still runs
+the structural checks and CI enforces the rest. To refresh the vendored schemas, re-download
+[`claude-code-plugin-manifest.json`](https://json.schemastore.org/claude-code-plugin-manifest.json)
+and [`claude-code-marketplace.json`](https://json.schemastore.org/claude-code-marketplace.json)
+into `.claude-plugin/schemas/`.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,22 @@
+#!/bin/sh
+# cliwright pre-commit hook — validate the Claude Code plugin manifests.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+#                    (or)   ./scripts/install-hooks.sh
+#
+# Runs only when plugin-relevant files are staged. A missing python3 warns but
+# does not block the commit — CI (.github/workflows/validate.yml) is the hard gate.
+
+root=$(git rev-parse --show-toplevel)
+
+if ! git diff --cached --name-only --diff-filter=ACMR \
+    | grep -Eq '^(\.claude-plugin/|agents/|commands/|skills/|scripts/validate-plugin\.py)'; then
+    exit 0
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "⚠ pre-commit: python3 not found — skipping manifest validation (CI will enforce)." >&2
+    exit 0
+fi
+
+exec python3 "$root/scripts/validate-plugin.py"

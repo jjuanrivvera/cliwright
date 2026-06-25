@@ -2,6 +2,18 @@
 
 All notable changes to cliwright are documented here. Format: [Keep a Changelog](https://keepachangelog.com); versioning: [SemVer](https://semver.org).
 
+## [0.2.1] — 2026-06-24
+
+Fixes a manifest bug that broke `/plugin install cliwright@cliwright` on 0.2.0, and adds validation so it can't regress.
+
+### Fixed
+- **Plugin install failed schema validation** (`agents: Invalid input`). `plugin.json` declared `agents: "./agents"`, but the manifest schema only accepts a `.md` file path (or list) for `agents` — not a directory. Removed the redundant `agents`/`commands`/`skills` directory pointers entirely; those conventionally-named directories are auto-discovered.
+- **`marketplace.json` `$schema` pointed at a 404 URL** (`claude-code-plugin-marketplace.json`); corrected to the real `claude-code-marketplace.json` so editors validate it live.
+
+### Added
+- **Manifest validation** (`scripts/validate-plugin.py`) — JSON Schema validation against the vendored schemastore schemas in `.claude-plugin/schemas/`, plus structural checks that every referenced component resolves and carries the required frontmatter.
+- Wired into a **pre-commit hook** (`.githooks/pre-commit`, enable via `scripts/install-hooks.sh`) and **CI** (`.github/workflows/validate.yml`), reusing the one validator so local and remote checks never drift.
+
 ## [0.2.0] — 2026-06-24
 
 Hardening pass driven by a real dogfood (built `catapi-cli` from the playbook to a green gate) plus a comparison against four mature CLI codebases and the actual n8nctl `/goal` build transcript.

@@ -175,9 +175,19 @@ transfer to other languages, but unless I say otherwise, build it in Go.
 - **≥80% test coverage as a ratchet**, enforced in CI — new code ships with its tests **in the
   same commit**, and every feature batch re-runs the gate before committing (the line breaks on
   every batch otherwise). `httptest` mock servers; table-driven tests; fuzz the flexible JSON
-  decoders; test failure paths, not just happy paths. **Portable tests:** use `filepath.Join`
-  (no hardcoded `/`, so Windows CI passes) and **reset the cobra command tree between tests**
-  (subcommand flags persist on a shared root and leak across cases).
+  decoders; test failure paths, not just happy paths. **Portable tests (Windows CI runs the
+  matrix too):** build every path with `filepath.Join` and write scratch files under
+  `t.TempDir()` — **never hardcode `/` separators or Unix paths** (a literal `/tmp/...`,
+  `$HOME/.config`, or `"a/b"` fails on Windows; this broke `TestDirAndPath_XDG`,
+  `TestConfig_SaveLoadRoundTrip`, `TestFileStore_RoundTrip` in practice). **Capture command
+  output via cobra, not the real stdout:** prefer `cmd.SetOut(&buf)` / `SetErr(&buf)` with a
+  `bytes.Buffer` (deterministic, race-free). If a test genuinely must hijack `os.Stdout` (e.g. a
+  command that writes to `os.Stdout` directly, like `completion`), it **MUST drain the
+  `os.Pipe()` reader concurrently in a goroutine** *before* invoking the code — a
+  read-after-write helper deadlocks once the program writes more than the OS pipe buffer (the
+  writer blocks with no reader; the buffer is ~64KB on Linux/macOS but far smaller on Windows,
+  so `completion bash` hung Windows CI to the timeout). And **reset the cobra command tree
+  between tests** (subcommand flags persist on a shared root and leak across cases).
 
 ---
 
@@ -355,9 +365,14 @@ it worth installing over `curl` or the first-party tool.
 **Phase A — Scaffold.** `go mod init <module_path>`; create the directory tree;
 add `Makefile` (with the `verify` target), `.golangci.yml` (v2), `.githooks/pre-commit`,
 `.gitignore`, `LICENSE`, `AGENTS.md` with `CLAUDE.md`→`AGENTS.md` symlink, and the checked-in
-`api-manifest.json` (§11). Wire version vars + ldflags. **Scaffold CI now with the prebuilt
-`securego/gosec` Action + `govulncheck@latest` — never `go install` a pinned *old* scanner
-(it won't compile under a newer Go toolchain; this cost real redo cycles in practice).**
+`api-manifest.json` (§11). Wire version vars + ldflags. **Scaffold CI now so the linters track
+the toolchain: build golangci-lint, gosec, and govulncheck FROM SOURCE with the job's Go
+(`go install …@latest` in the workflow) — never pin a scanner version and never lean on the
+prebuilt `golangci-lint-action` / `securego/gosec` Action. A pinned/prebuilt scanner lags the
+Go toolchain and can't analyze a module already on the next Go release (e.g. a go1.25 module
+under a Go-1.24 linter → "configuration contains invalid elements"); this cost real redo cycles
+in practice. Pin `go-version` consistently across every job (use `stable`, or the module's
+exact Go) so lint/security/test/build all run the same toolchain as `go.mod`.**
 
 **Phase B — Client core.** `internal/api/{client,resource,pagination,types,errors,retry,ratelimit}.go`.
 Implement auth, dry-run curl, adaptive rate limit, idempotent retry, the generic
@@ -462,17 +477,23 @@ setup-hooks clean`. `make check` = fmt + vet + lint + test (the local gate).
 
 - **`ci.yml`** (push to main/develop + PR): `lint` (gofmt, vet, golangci-lint, **+ a
   docs-gen drift check**: run `make docs-gen` and `git diff --exit-code -- docs/commands`),
-  `security` (govulncheck **blocking** via `go install golang.org/x/vuln/cmd/govulncheck@latest`;
-  gosec **gating on high-severity** via the **prebuilt `securego/gosec@vX.Y.Z` action**
-  with `args: '-severity high -confidence medium ./...'`). **Do NOT `go install` a pinned
-  *old* scanner version** — an old gosec/govulncheck won't compile under a newer Go toolchain
-  (the `x/tools` `invalid array length -delta*delta` failure); use the published gosec *action*
-  (ships a prebuilt binary) and `govulncheck@latest` (its vuln DB is fetched live, so the
-  binary version barely affects determinism). Standalone gosec honors `#nosec G404` (not
-  golangci's `//nolint:gosec`), and for a CLI it false-positives on **G404** (non-crypto jitter
-  RNG) and **G703/G304** (writing to a user's own `--out`/input path) — suppress those with a
-  justified `#nosec`. `test` matrix (ubuntu/macos/windows; `-race`; coverage gate ≥80% on
-  ubuntu; codecov), `build` (`goreleaser check` then GoReleaser snapshot, skip sign/sbom/docker).
+  `security` (govulncheck **blocking**; gosec **gating on high-severity** with
+  `-severity high -confidence medium ./...`). **Build all three scanners FROM SOURCE with the
+  job's Go** — `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`,
+  `go install github.com/securego/gosec/v2/cmd/gosec@latest`, and
+  `go install golang.org/x/vuln/cmd/govulncheck@latest` — then run the binaries directly.
+  **Do NOT pin a scanner version and do NOT use the prebuilt `golangci-lint-action` /
+  `securego/gosec` Action**: a pinned/prebuilt scanner lags the Go toolchain and can't compile
+  or analyze a module already on a newer Go (the `x/tools` `invalid array length -delta*delta`
+  failure, or golangci's "configuration contains invalid elements"). `@latest` compiled in the
+  job always matches the module's Go, and govulncheck's vuln DB is fetched live so the binary
+  version barely affects determinism. Pin `go-version` the same way in every job (`stable` or
+  the module's exact Go) so lint/security/test/build share one toolchain. Standalone gosec
+  honors `#nosec G404` (not golangci's `//nolint:gosec`), and for a CLI it false-positives on
+  **G404** (non-crypto jitter RNG) and **G703/G304** (writing to a user's own `--out`/input
+  path) — suppress those with a justified `#nosec`. `test` matrix (ubuntu/macos/windows;
+  `-race`; coverage gate ≥80% on ubuntu; codecov), `build` (`goreleaser check` then GoReleaser
+  snapshot, skip sign/sbom/docker).
 - **`release.yml`** (tag `v*`): GoReleaser full pipeline (Buildx, GHCR login, cosign, syft,
   `release --clean`).
 - **`docs.yml`** (push to main touching docs/commands): regenerate refs, `mkdocs gh-deploy --force`.

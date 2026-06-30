@@ -12,11 +12,11 @@ not application code.
 ## Layout
 
 ```
-GOAL.md                         the canonical, SELF-CONTAINED playbook (source of truth)
 .claude-plugin/
   plugin.json                   Claude Code plugin manifest
   marketplace.json              self-distribution manifest
 skills/cliwright/
+  GOAL.md                       the canonical, SELF-CONTAINED playbook (source of truth)
   SKILL.md                      lean skill wrapper → points to GOAL.md
   references/                   deep-dives extracted from GOAL.md (loaded on demand)
   templates/                    copy-in skeletons (generic core, Makefile+verify, goreleaser, ci)

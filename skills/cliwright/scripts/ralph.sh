@@ -13,6 +13,8 @@ set -euo pipefail
 
 AGENT="${CLIWRIGHT_AGENT:-claude}"
 MAX="${CLIWRIGHT_MAX_ITERS:-30}"
+# GOAL.md ships in the skill directory (next to ../GOAL.md from here); run from there or
+# set CLIWRIGHT_GOAL to an explicit path.
 GOAL="${CLIWRIGHT_GOAL:-GOAL.md}"
 PROMPT_OVERRIDE=""
 

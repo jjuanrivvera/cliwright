@@ -27,7 +27,7 @@ complete **spec** and a machine-checkable **gate** the completion promise is bou
 - **Shipped completely.** Homebrew/Scoop + deb/rpm/apk, cosign + SBOM, generated docs site,
   and — optionally — its own Claude Code plugin + cross-tool agent skill.
 
-The full, self-contained playbook is **[GOAL.md](GOAL.md)**.
+The full, self-contained playbook is **[GOAL.md](skills/cliwright/GOAL.md)**.
 
 ## Install
 

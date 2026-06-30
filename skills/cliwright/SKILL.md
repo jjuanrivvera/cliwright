@@ -12,13 +12,14 @@ metadata: {"openclaw":{"category":"developer-tools","emoji":"🛠️"}}
 # cliwright — a wright of CLIs
 
 This skill turns any HTTP API into a polished, distributable CLI built to a single
-high standard, fully specified in **[GOAL.md](../../GOAL.md)** (the canonical playbook).
+high standard, fully specified in **[GOAL.md](GOAL.md)** (the canonical playbook).
 The playbook is self-contained: it does **not** depend on reading any other repository.
 
 ## How to run it
 
-1. **Read the playbook.** Load `${CLAUDE_PLUGIN_ROOT}/GOAL.md` (or `GOAL.md` at the repo
-   root when developing this plugin). It is the complete brief — architecture, the
+1. **Read the playbook.** Load `GOAL.md` (in this skill's directory — it ships next to this
+   SKILL.md, so the same path resolves under both a plugin and a skill-only install). It is
+   the complete brief — architecture, the
    non-negotiable standard, the meta-command set, the MCP/agent surface, distribution,
    CI/CD, packaging, reference skeletons, the determinism rules, and the acceptance gate.
 2. **Fill the TARGET API block** at the top of the playbook. Everything about the API

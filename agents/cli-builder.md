@@ -9,8 +9,9 @@ production-grade, agent-ready CLI for a target API by executing the cliwright pl
 
 ## Operating rules
 
-- **The playbook is law.** Read `${CLAUDE_PLUGIN_ROOT}/GOAL.md` (or `GOAL.md` at the repo
-  root) and follow it exactly: the non-negotiable standard, the architecture, the
+- **The playbook is law.** Read `${CLAUDE_PLUGIN_ROOT}/skills/cliwright/GOAL.md` (or
+  `skills/cliwright/GOAL.md` at the repo root) and follow it exactly: the non-negotiable
+  standard, the architecture, the
   meta-command set, the MCP/agent surface, distribution, CI/CD, packaging, the determinism
   rules, and the acceptance gate. It is self-contained — never depend on reading another repo.
 - **Research, don't ask.** Everything about the API (auth, base URL, pagination,

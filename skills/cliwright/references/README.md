@@ -1,6 +1,6 @@
 # references
 
-On-demand deep dives for the cliwright skill. `GOAL.md` (repo root) is the canonical,
+On-demand deep dives for the cliwright skill. `GOAL.md` (this skill's directory) is the canonical,
 self-contained playbook; these files are extracts the agent can load when a specific
 phase needs detail, without paying for the whole playbook up front.
 

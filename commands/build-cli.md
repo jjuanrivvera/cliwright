@@ -10,7 +10,7 @@ Build a complete, agent-ready CLI for **$ARGUMENTS** following the cliwright pla
 
 ## Steps
 
-1. Read the canonical playbook at `${CLAUDE_PLUGIN_ROOT}/GOAL.md`. It is self-contained —
+1. Read the canonical playbook at `${CLAUDE_PLUGIN_ROOT}/skills/cliwright/GOAL.md`. It is self-contained —
    do not rely on reading any other repository.
 2. Parse `$ARGUMENTS` into the playbook's **TARGET API** block:
    - `$1` → `api_name`

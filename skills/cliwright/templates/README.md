@@ -21,7 +21,7 @@ leave those intact.
 
 | Template | Destination in the generated CLI |
 |---|---|
-| `Makefile` | `./Makefile` (defines `make verify`, the acceptance gate) |
+| `Makefile` | `./Makefile` (`make verify` = deterministic gate; `make accept` = build-acceptance) |
 | `goreleaser.yaml` | `./.goreleaser.yaml` |
 | `ci.yml` | `./.github/workflows/ci.yml` |
 | `cover-check.sh` `dod-check.sh` `spec-check.sh` `judge.sh` | `./scripts/` (chmod +x) |
@@ -32,8 +32,10 @@ leave those intact.
 
 ## The gate
 
-`make verify` = `check` + `spec-check` + `cover-check` + `dod-check.sh` + `judge.sh`.
-It is the loop's exit condition (GOAL.md §12): the `/goal` completion promise may fire
-only when `make verify` exits 0. `dod-check.sh` is deterministic (one check per atomic
-DoD item); `judge.sh` is the single LLM-scored gate for the few subjective items and is
-skippable in CI only via `CLIWRIGHT_SKIP_JUDGE=1` (logged, never silent).
+`make verify` = `check` + `spec-check` + `spec-completeness` + `cover-check` + `dod-check.sh`
+— the **deterministic** gate (no LLM, no tokens). This is what CI and routine `make` runs use.
+`make accept` = `verify` + `judge.sh` — the build-acceptance gate the loop binds to (GOAL.md
+§12): the `/goal` completion promise may fire only when `make accept` exits 0. `dod-check.sh`
+is deterministic (one check per atomic DoD item); `judge.sh` is the single LLM-scored gate for
+the few subjective items — it needs an agent and spends tokens, so it lives in `accept`, not
+the routine `verify` (skippable via `CLIWRIGHT_SKIP_JUDGE=1`, logged, never silent).

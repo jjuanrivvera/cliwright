@@ -29,11 +29,13 @@ The playbook is self-contained: it does **not** depend on reading any other repo
 3. **Execute the phases in order** (Scaffold → Client core → Cross-cutting UX → Meta
    commands → Resource loop → Agent surface → Beyond-the-API → Tests & gates → Docs →
    Distribution → Packaging), committing per phase.
-4. **Gate on `make verify`.** The build is done only when the deterministic acceptance
-   gate passes — `make check` + coverage + `spec-check` (CLI surface ⊆ the manifest) +
-   `spec-completeness` (manifest covers ≥ ~90% of the enumerated API, so a memory-authored
-   manifest can't wrap a fraction of it unnoticed) + the atomic Definition-of-Done checklist +
-   the judge rubric for the few subjective items. See the "Acceptance gate", "Determinism rules",
+4. **Gate on `make accept`.** The build is done only when the acceptance gate passes:
+   `make verify` (the **deterministic** gate — `make check` + coverage + `spec-check` (CLI
+   surface ⊆ the manifest) + `spec-completeness` (manifest covers ≥ ~90% of the enumerated
+   API, so a memory-authored manifest can't wrap a fraction of it unnoticed) + the atomic
+   Definition-of-Done checklist) **plus** the LLM `judge` rubric for the few subjective items.
+   `make accept` = `verify` + `judge`; the judge spends tokens and needs an agent, so CI and
+   routine runs use the cheaper `make verify`. See the "Acceptance gate", "Determinism rules",
    and §0 method-enumeration sections in GOAL.md.
 
 ## Driving it to completion (the loop)
@@ -42,11 +44,11 @@ This skill carries the **spec and the gate**; it relies on the runtime's native 
 loop as the **engine**. Run the build under `/goal` (Claude Code and Codex both ship it),
 and bind the loop's completion promise to the gate:
 
-> The completion promise may be emitted **only** when `make verify` exits `0`.
+> The completion promise may be emitted **only** when `make accept` exits `0`.
 > Never emit a false promise to escape the loop — if the gate fails, keep iterating.
 
 If `/goal` is unavailable, fall back to the bundled `scripts/ralph.sh` (a portable
-`while ! make verify; do <agent> continue; done` loop).
+`while ! make accept; do <agent> continue; done` loop).
 
 ## What it produces
 

@@ -2,7 +2,7 @@
 # ralph.sh — portable fallback loop for cliwright.
 #
 # Use this ONLY when the runtime has no native `/goal` loop. It re-feeds the build
-# prompt to a headless agent until the acceptance gate (`make verify`) exits 0.
+# prompt to a headless agent until the acceptance gate (`make accept`) exits 0.
 # The gate is the source of truth, so the loop cannot "lie" its way to done.
 #
 # Usage:
@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-PROMPT="${PROMPT_OVERRIDE:-Continue building this CLI strictly per ${GOAL}. Run \`make verify\`; if it fails, read the failure, fix the smallest thing, and continue. Do NOT stop or claim completion until \`make verify\` exits 0.}"
+PROMPT="${PROMPT_OVERRIDE:-Continue building this CLI strictly per ${GOAL}. Run \`make accept\`; if it fails, read the failure, fix the smallest thing, and continue. Do NOT stop or claim completion until \`make accept\` exits 0.}"
 
 run_agent() {
   case "$AGENT" in
@@ -39,7 +39,7 @@ run_agent() {
 
 i=0
 while (( i < MAX )); do
-  if make verify; then
+  if make accept; then
     echo "✓ acceptance gate passed after ${i} agent iteration(s)"
     exit 0
   fi

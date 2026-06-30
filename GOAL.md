@@ -452,7 +452,7 @@ fit this API: declarative `apply`/`lint`/`diff`/`convert`, backup/restore, cross
 `sync`, content search.
 
 **Phase F — Tests & gates.** `httptest` helper `newTestClient(t, handler)`; table-driven;
-`require` for fatal/setup, `assert` otherwise; fuzz the decoders. The gate is **`make verify`**
+`require` for fatal/setup, `assert` otherwise; fuzz the decoders. The gate is **`make accept`**
 (§12) green — `make check` alone is **not** the gate (it skips spec-check, dod-check, coverage,
 and the judge); run the full `make verify` for any change that touches the surface, not just at
 the end.
@@ -653,9 +653,10 @@ func TestWidgets_List(t *testing.T) {
 ## 9. Definition of Done (acceptance checklist)
 
 > This checklist is the **gate**, not a vibe check. §12 wires every item below into one
-> `make verify` command (a deterministic check per atomic item + a judge rubric for the few
-> genuinely subjective ones). The loop's completion promise may fire **only** when
-> `make verify` exits `0`. Split compound items (e.g. the output-formats line) into atomic
+> `make accept` gate (a deterministic check per atomic item + a judge rubric for the few
+> genuinely subjective ones; the judge lives in `accept`, not the routine `verify`). The
+> loop's completion promise may fire **only** when `make accept` exits `0`. Split compound
+> items (e.g. the output-formats line) into atomic
 > checks — one per format, one per meta-command.
 
 - [ ] `make check` green: gofmt-clean, vet-clean, golangci-lint pass, gosec+govulncheck clean, tests pass.
@@ -765,16 +766,20 @@ surface. Remove the free choices a loop would otherwise amplify into drift.
 
 ---
 
-## 12. Acceptance gate (`make verify`) — the loop's exit condition
+## 12. Acceptance gate (`make accept`) — the loop's exit condition
 
-The build is finished only when one command proves it. Wire §9 into a single gate:
+The build is finished only when one command proves it. Wire §9 into TWO gates: a
+deterministic `verify` (what CI and routine `make` runs use), and `accept` (= `verify` +
+the LLM `judge`) that the build loop binds to. The judge spends tokens and needs an agent,
+so it must NOT run on every CI/dev `make verify`:
 
 ```make
-verify: check spec-check spec-completeness   ## the whole acceptance gate; exit 0 == done
+verify: check spec-check spec-completeness   ## DETERMINISTIC gate (CI/dev); exit 0 == green
 	go test ./... -coverprofile=coverage.out
 	./scripts/cover-check.sh 80          # coverage ≥ 80% or fail
 	./scripts/dod-check.sh               # one concrete check per atomic §9 item
-	./scripts/judge.sh                   # rubric for the few subjective items
+judge: ; ./scripts/judge.sh             # LLM rubric for the few subjective items (build-time only)
+accept: verify judge                    ## full build-acceptance; the /goal loop binds to THIS
 ```
 
 - **`make check`** — fmt + vet + golangci-lint + gosec + govulncheck + tests (the §5/§6 gate).
@@ -794,9 +799,9 @@ verify: check spec-check spec-completeness   ## the whole acceptance gate; exit 
 
 **Completion-promise binding (the anti-cheat).** When driven by `/goal` (or any Ralph-style
 loop), the completion promise (e.g. `<promise>CLI COMPLETE</promise>`) may be emitted **only
-after `make verify` exits `0`**. Do **not** emit a false promise to escape the loop — not
+after `make accept` exits `0`**. Do **not** emit a false promise to escape the loop — not
 when stuck, not when "close enough," not for any reason. If the gate fails, read the failure,
-fix the smallest thing, and iterate. `make verify` is the single source of truth for "done
+fix the smallest thing, and iterate. `make accept` is the single source of truth for "done
 and high."
 
 ---
@@ -824,9 +829,10 @@ and high."
 - **Same API in → same CLI out:** choose the resource pattern by §11's rule, derive the
   resource set/order from the spec, and pin every assumption in `DECISIONS.md` — never
   re-decide per iteration.
-- **Done is what `make verify` proves, not what you assert.** Emit a loop completion promise
-  only after the gate exits `0`; never a false one. The gate is **`make verify`**, not
-  `make check` — for **every** change that touches the surface or a documented behavior, not
+- **Done is what `make accept` proves, not what you assert.** Emit a loop completion promise
+  only after the gate exits `0`; never a false one. The gate is **`make accept`** (`verify`
+  plus the LLM judge), not `make check` — for **every** change that touches the surface or a
+  documented behavior, not
   just at first build.
 - **The agent informs; the user decides how far.** Default `distribution_scope` is
   `local-build`: build + local commits only. **Never** create a remote repo, push, or publish a

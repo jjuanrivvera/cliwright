@@ -56,7 +56,7 @@ npx skills add jjuanrivvera/cliwright
 The build is complete when the acceptance gate is green:
 
 ```bash
-make verify   # make check + coverage + spec-check + Definition-of-Done checklist + judge rubric
+make verify   # make check + coverage + spec-check + spec-completeness + Definition-of-Done checklist + judge rubric
 ```
 
 ## How it works

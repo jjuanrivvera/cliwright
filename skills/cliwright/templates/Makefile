@@ -10,6 +10,8 @@ LDFLAGS     := -s -w \
   -X $(MODULE)/internal/version.Commit=$(COMMIT) \
   -X $(MODULE)/internal/version.Date=$(DATE)
 COVERAGE_MIN ?= 80
+# spec-completeness: min % of the enumerated full API the manifest must wrap
+API_COVERAGE_MIN ?= 90
 
 .DEFAULT_GOAL := build
 
@@ -35,11 +37,13 @@ check: fmt vet lint test ## the local quality gate
 
 ## --- the acceptance gate (cliwright) ---
 # verify == "done and high". The /goal completion promise binds to this exiting 0.
-verify: check spec-check cover-check ## full acceptance gate; exit 0 == done
+verify: check spec-check spec-completeness cover-check ## full acceptance gate; exit 0 == done
 	./scripts/dod-check.sh $(BINARY)
 	./scripts/judge.sh
-spec-check: ## built CLI surface must match the spec-derived manifest
+spec-check: ## built CLI surface ⊆ the spec-derived manifest (consistency)
 	./scripts/spec-check.sh
+spec-completeness: ## manifest must wrap ≥$(API_COVERAGE_MIN)% of the enumerated full API (completeness)
+	./scripts/spec-completeness.sh api-manifest.json $(API_COVERAGE_MIN)
 
 ## --- docs & release ---
 docs-gen: ; go run ./tools/gendocs
@@ -50,5 +54,5 @@ setup-hooks: ; git config core.hooksPath .githooks && echo "hooks installed"
 clean: ; rm -rf bin dist coverage.out
 
 .PHONY: build install uninstall run dev fmt vet lint tidy test test-race \
-        test-coverage cover-check check verify spec-check docs-gen docs-serve \
-        docs-build snapshot setup-hooks clean
+        test-coverage cover-check check verify spec-check spec-completeness \
+        docs-gen docs-serve docs-build snapshot setup-hooks clean

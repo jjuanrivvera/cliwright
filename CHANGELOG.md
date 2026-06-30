@@ -2,6 +2,14 @@
 
 All notable changes to cliwright are documented here. Format: [Keep a Changelog](https://keepachangelog.com); versioning: [SemVer](https://semver.org).
 
+## [Unreleased]
+
+Two design fixes from the tgctl post-mortem (a hand-curated manifest wrapped only ~⅓ of the Telegram Bot API) and the `--profile` ergonomics review.
+
+### Added
+- **Method-enumeration step + completeness gate** (closes the narrow-surface root cause). The spec-check gate only ever proved CLI ⊆ manifest (consistency), never manifest == full API (completeness), so under-capture was invisible. GOAL.md §0 Step 1b now REQUIRES enumerating the complete method/endpoint set from a source (OpenAPI/Postman/`llms.txt`, else the docs' full method index or a community machine spec — Telegram → `ark0f/tg-bot-api`) BEFORE authoring the manifest, which must derive from that list, not model recall. A new `scripts/spec-completeness.sh` (template) compares the manifest's covered method count (`resources[].verbs` + `methods[]`) against the enumerated `api_method_total` and FAILS below ~90% unless a `coverage-waiver` is recorded in `DECISIONS.md`. Wired into `make verify` alongside `spec-check` (Makefile `verify`/`spec-completeness` targets). Manifest gains `api_method_total` + `api_method_source` (§0/§9/§11/§12).
+- **Configurable multi-profile flag name** (per-tool). New manifest/TARGET field `profile_flag`/`profile_noun` (default `"profile"`) names the multi-profile selector so it reads naturally — `--bot` for Telegram, `--instance` for n8n, `--account` for accounting. `--profile` is kept as a HIDDEN alias for back-compat; GOAL.md §1/§3 carry the root.go wiring snippet, and the MCP exclusion (§3b) + guardrails now exclude the selector under both its configured name and the `--profile` alias (§0 TARGET, §1, §3, §3b).
+
 ## [0.2.1] — 2026-06-24
 
 Fixes a manifest bug that broke `/plugin install cliwright@cliwright` on 0.2.0, and adds validation so it can't regress.

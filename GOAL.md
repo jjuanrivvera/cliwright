@@ -25,6 +25,9 @@ pagination:      # one of: offset(start/limit) | page/per_page | cursor | Link-h
 resources:       # priority-ordered list of the resources to ship first, with key fields each
                  #   e.g. customers(id,name,email,created), invoices(id,number,total,status)
 special_ops:     # long-running jobs, file up/download, fiscal/e-invoice, webhooks, bulk import — if any
+profile_flag:    # NAME of the multi-profile selector flag, so it reads naturally per API:
+                 #   --bot (Telegram: a profile IS a bot), --instance (n8n), --account (accounting).
+                 #   Default: profile. --profile is ALWAYS kept as a hidden alias for back-compat.
 # Identity / distribution
 binary_name:     # e.g. "stripe" (the command users type)
 module_path:     # e.g. github.com/<owner>/<repo>
@@ -75,6 +78,28 @@ everything, skip questions and start building.
 If the docs are ambiguous or contradictory, **state the assumption you're making** and
 proceed — don't turn it into a question.
 
+**Step 1b — Enumerate the COMPLETE method/endpoint set BEFORE authoring the manifest
+(non-negotiable).** The manifest (§11) must be *derived from an enumerated list of every method
+the API exposes* — never from memory. Recall under-captures **silently**: a hand-curated manifest
+looks perfectly consistent (every command it ships maps to a declared resource) while wrapping a
+fraction of the API, and `spec-check` can't see the gap because it only proves CLI ⊆ manifest,
+never manifest == full API. *(This is the tgctl failure — ~⅓ of the Telegram Bot API wrapped, the
+shortfall invisible because the manifest was authored from the model's memory, not an enumeration.)*
+So enumerate from a source, in order of preference:
+
+1. **A machine spec exists** — OpenAPI/Swagger, a Postman collection, or `llms.txt`: parse it and
+   take its operation list as ground truth (e.g. count `jq '.paths | to_entries[] | .value | keys[]' openapi.json`).
+2. **No machine spec (RPC-style / non-OpenAPI APIs)** — scrape the docs' **full method index**:
+   every method anchor/heading on the API reference page (Telegram lists ~one `<h4>` per method —
+   `sendMessage`, `getUpdates`, …). Count them. Better still, adopt a **community machine spec**
+   when one exists: for Telegram, `ark0f/tg-bot-api` publishes a generated, machine-readable Bot
+   API spec — use it as the enumeration source rather than hand-listing methods from memory.
+
+Record the enumerated total **and its source** in the manifest (`api_method_total` +
+`api_method_source`, §11). `make spec-completeness` then **fails the build** when the manifest
+covers materially less than ~90% of that total without a recorded waiver in `DECISIONS.md` — so
+under-capture is a loud gate failure, not an invisible default.
+
 **Step 2 — Ask me only what the web cannot know** (batch into ≤4 questions, skip any
 already answered in the TARGET block):
 
@@ -89,8 +114,9 @@ already answered in the TARGET block):
 
 If everything needed is already present, **skip the questions and start building.**
 
-Keep a checked-in API manifest derived from the spec so the CLI surface can be diffed
-against it (`make spec-check`).
+Keep a checked-in API manifest **derived from the enumerated method list** (§11), so the CLI
+surface can be diffed against it for both **consistency** (`make spec-check` — CLI ⊆ manifest)
+and **completeness** (`make spec-completeness` — manifest covers ≥ ~90% of the enumerated API).
 
 ---
 
@@ -121,7 +147,10 @@ transfer to other languages, but unless I say otherwise, build it in Go.
   `$XDG_CONFIG_HOME`) — **dir `0700`, file `0600`, written atomically** (temp-in-same-dir +
   rename, never a torn write). Env overrides are namespaced `<BINARY>_*`, but **pick the real
   names per service** — the secret var is *not* uniformly `<BIN>_TOKEN` (it's `N8NCTL_API_KEY`,
-  `ADGUARD_PASSWORD`, `ALEGRA_TOKEN`, …). Named **profiles**/instances for multi-account;
+  `ADGUARD_PASSWORD`, `ALEGRA_TOKEN`, …). Named **profiles**/instances for multi-account, with the
+  selector flag **named per API** so it reads naturally (the manifest's `profile_flag`/`profile_noun`,
+  default `--profile`; see §3) — `--bot` for Telegram, `--instance` for n8n, `--account` for
+  accounting — and `--profile` kept as a hidden alias for back-compat;
   **validate** profile names (reject `/ \ : * ? " < > |` — traversal) and base URLs (require
   `http|https` + host, and **reject plain `http://` for non-loopback hosts** — cleartext leak).
 - **Secrets never in plaintext.** Tokens live in the OS keyring
@@ -281,9 +310,25 @@ make it a **rule**, recorded in `DECISIONS.md`, so it stays deterministic (§11)
 | `update [--check]` *(optional)* | Self-update from GitHub releases. |
 | `repl` / `shell` *(optional)* | Interactive session with history, context vars, completion. |
 
-Global persistent flags: `-o/--output`, `--profile`/`--instance`, `--base-url`,
-`--dry-run`, `--show-token`, `-v/--verbose`, `--no-color`, `--columns`, `--quiet`,
-plus list flags `--all`, `--limit`, `--sort`, `--filter`.
+Global persistent flags: `-o/--output`, the **multi-profile selector** (named from the manifest's
+`profile_flag`; see below), `--base-url`, `--dry-run`, `--show-token`, `-v/--verbose`, `--no-color`,
+`--columns`, `--quiet`, plus list flags `--all`, `--limit`, `--sort`, `--filter`.
+
+**Name the multi-profile flag per API.** A generic `--profile` reads wrong for most services — a
+profile *is* a bot for Telegram, an instance for n8n, an account for accounting. Take the flag name
+(and help noun) from the manifest's `profile_flag`/`profile_noun` (default `"profile"` when nothing
+fits better), and **keep `--profile` as a HIDDEN alias** so muscle memory and existing scripts never
+break. Wire it once in `root.go` (and stamp the same noun into the generic command builder's help):
+
+```go
+// profileFlag/profileNoun come from the manifest (default "profile"). Both flags target the
+// same var, so --bot and the legacy --profile are interchangeable; --profile is hidden.
+rootCmd.PersistentFlags().StringVar(&profile, profileFlag, "", "named "+profileNoun+" to use")
+if profileFlag != "profile" {
+    rootCmd.PersistentFlags().StringVar(&profile, "profile", "", "alias for --"+profileFlag)
+    _ = rootCmd.PersistentFlags().MarkHidden("profile")
+}
+```
 
 ---
 
@@ -300,7 +345,9 @@ rootCmd.AddCommand(ophis.Command(&ophis.Config{
     ToolNamePrefix: "<short>",   // tools become <short>_<resource>_<verb>
     Selectors: []ophis.Selector{{
         CmdSelector:           ophis.ExcludeCmdsContaining("agent","auth","config","alias","init","skills","doctor"),
-        InheritedFlagSelector: ophis.ExcludeFlags("show-token","profile","api-key","base-url"),
+        // Exclude the profile selector under BOTH its configured name (profileFlag, e.g. "bot")
+        // and the hidden "profile" alias, so an agent can't switch instances either way.
+        InheritedFlagSelector: ophis.ExcludeFlags("show-token", profileFlag, "profile", "api-key", "base-url"),
     }},
 }))
 ```
@@ -308,9 +355,10 @@ rootCmd.AddCommand(ophis.Command(&ophis.Config{
 - ophis walks the tree, auto-derives a tool per runnable leaf, and **replays the cobra
   command** on invocation — so every tool reuses the same client, keyring, profiles, and
   `--dry-run`. No separate handler layer.
-- **Never expose secret/instance flags** (`--api-key`, `--show-token`, `--profile`,
-  `--base-url`): the server uses whatever profile is active at startup, so an agent can't
-  switch instances or read the key.
+- **Never expose secret/instance flags** (`--api-key`, `--show-token`, the profile selector
+  under both its configured `profile_flag` name and the `--profile` alias, `--base-url`): the
+  server uses whatever profile is active at startup, so an agent can't switch instances or read
+  the key.
 - Exclude setup/meta commands (`auth`, `config`, `init`, `alias`, `skills`, `agent`); a
   registry test (`TestMCPExcludesSetupCommands`) locks the surface.
 - In the generic builder, tag each subcommand with ophis hint annotations so hosts gate
@@ -364,8 +412,10 @@ it worth installing over `curl` or the first-party tool.
 
 **Phase A — Scaffold.** `go mod init <module_path>`; create the directory tree;
 add `Makefile` (with the `verify` target), `.golangci.yml` (v2), `.githooks/pre-commit`,
-`.gitignore`, `LICENSE`, `AGENTS.md` with `CLAUDE.md`→`AGENTS.md` symlink, and the checked-in
-`api-manifest.json` (§11). Wire version vars + ldflags. **Scaffold CI now so the linters track
+`.gitignore`, `LICENSE`, `AGENTS.md` with `CLAUDE.md`→`AGENTS.md` symlink, the gate scripts
+(`scripts/{spec-check,spec-completeness,cover-check,dod-check,judge}.sh`), and the checked-in
+`api-manifest.json` — **enumeration-derived** with `api_method_total`/`api_method_source` (§0
+Step 1b, §11). Wire version vars + ldflags. **Scaffold CI now so the linters track
 the toolchain: build golangci-lint, gosec, and govulncheck FROM SOURCE with the job's Go
 (`go install …@latest` in the workflow) — never pin a scanner version and never lean on the
 prebuilt `golangci-lint-action` / `securego/gosec` Action. A pinned/prebuilt scanner lags the
@@ -611,6 +661,8 @@ func TestWidgets_List(t *testing.T) {
 - [ ] `make check` green: gofmt-clean, vet-clean, golangci-lint pass, gosec+govulncheck clean, tests pass.
 - [ ] Coverage ≥ 80%, enforced in CI. Flexible JSON types are fuzz-tested.
 - [ ] All priority `resources` shipped with list/get/create/update/delete (or read-only) + per-resource tests.
+- [ ] Manifest is **enumeration-derived** (`api_method_total` + `api_method_source` recorded) and
+      covers ≥ ~90% of the enumerated API — `make spec-completeness` green (or a `coverage-waiver` in `DECISIONS.md`).
 - [ ] Output works in table/json/yaml/csv; `--columns`, `--filter`, `--sort`, `--all`, `--limit` work.
 - [ ] Auth flow works end-to-end; tokens in keyring; `auth status`/`doctor` verify against the live API.
 - [ ] `--dry-run` prints a correct, copy-pasteable curl with the secret redacted.
@@ -681,18 +733,33 @@ surface. Remove the free choices a loop would otherwise amplify into drift.
   Switch to **Pattern B (service-layer)** *only* when the spec shows a documented trigger:
   per-resource `include`/expansion params, user impersonation/masquerade, or endpoints that
   aren't CRUD-on-a-resource. Record the trigger that forced Pattern B in `DECISIONS.md`.
-- **Derive the resource set and order from the spec, not from taste.** Resources = every
-  collection in the OpenAPI/docs; order them deterministically (by the spec's tag order,
-  then alphabetical). Flag read-only ones from the spec (no documented write verbs). Don't
-  hand-pick "the important ones" — ship the full priority surface; the human's TARGET
-  `resources` only reorders priority, it does not change membership.
+- **Derive the resource set and order from an ENUMERATED spec, not from memory or taste.**
+  First enumerate the complete method/endpoint set from a source (§0 Step 1b) — OpenAPI/Postman/
+  `llms.txt`, else the docs' full method index or a community machine spec (Telegram →
+  `ark0f/tg-bot-api`). Resources = every collection in that enumeration; order them
+  deterministically (by the spec's tag order, then alphabetical). Flag read-only ones from the
+  spec (no documented write verbs). Don't hand-pick "the important ones" and don't list from
+  recall — ship the full priority surface; the human's TARGET `resources` only reorders priority,
+  it does not change membership. Recall-authored manifests under-capture invisibly (the tgctl
+  ~⅓-coverage failure); the enumeration is what makes the resource *set* reproducible.
 - **Pin every assumption.** When the docs are ambiguous, write the assumption to a
   checked-in `DECISIONS.md` (one line each: question → decision → why) and read it back on
   every iteration. Never silently re-decide; the loop must see the same decisions each pass.
-- **The spec-derived manifest is a hard gate.** Generate a checked-in `api-manifest.json`
-  from the spec listing resources, fields, and verbs. `make spec-check` fails when the built
-  CLI surface diverges from it. This is the anchor that keeps "done" meaning the *same*
-  surface every run.
+- **The spec-derived manifest is a hard gate — in BOTH directions.** Generate a checked-in
+  `api-manifest.json` from the enumeration, listing resources, fields, and verbs, **plus the
+  enumerated `api_method_total` and its `api_method_source`** (and, for RPC-style APIs, a flat
+  `methods` array). Two gates anchor it:
+  - **Consistency** — `make spec-check` fails when the built CLI surface diverges from the
+    manifest (CLI ⊆ manifest: every command maps to a declared resource/verb).
+  - **Completeness** — `make spec-completeness` fails when the manifest covers materially less
+    than ~90% of `api_method_total` (manifest ≈ full API). Covered = `resources[].verbs` +
+    `methods[]`; the denominator is the enumerated total. A deliberate shortfall (e.g. "read
+    surface first, writes in v2") is allowed **only** with an explicit `coverage-waiver` line
+    recorded in `DECISIONS.md`, so the loop sees the same decision every pass.
+
+  spec-check alone never noticed under-capture (it only checks the direction that's already
+  consistent); the completeness gate is what keeps "done" meaning the *same, full* surface
+  every run.
 - **Stable output.** Canonical field order (struct/JSON-tag order), stable default
   `--columns`, deterministic table/json/yaml/csv rendering — never rely on map-iteration order.
 
@@ -703,7 +770,7 @@ surface. Remove the free choices a loop would otherwise amplify into drift.
 The build is finished only when one command proves it. Wire §9 into a single gate:
 
 ```make
-verify: check spec-check          ## the whole acceptance gate; exit 0 == done
+verify: check spec-check spec-completeness   ## the whole acceptance gate; exit 0 == done
 	go test ./... -coverprofile=coverage.out
 	./scripts/cover-check.sh 80          # coverage ≥ 80% or fail
 	./scripts/dod-check.sh               # one concrete check per atomic §9 item
@@ -711,7 +778,12 @@ verify: check spec-check          ## the whole acceptance gate; exit 0 == done
 ```
 
 - **`make check`** — fmt + vet + golangci-lint + gosec + govulncheck + tests (the §5/§6 gate).
-- **`spec-check`** — built surface == `api-manifest.json` (§11).
+- **`spec-check`** — built surface ⊆ `api-manifest.json`: every command maps to a declared
+  resource/verb (consistency, §11).
+- **`spec-completeness`** — `api-manifest.json` covers ≥ ~90% of the enumerated `api_method_total`
+  (completeness, §0/§11). Fails on under-capture unless a `coverage-waiver` is recorded in
+  `DECISIONS.md`. This is the gate that catches a memory-authored manifest wrapping a fraction of
+  the API while every shipped command still looks consistent.
 - **`dod-check.sh`** — a deterministic check per atomic §9 item: greps/smoke-tests that
   `mcp.go`, `agent.go`, each of the four output formats, the `--dry-run` curl,
   `signal.NotifyContext`, keyring storage, and every meta-command exist and behave. Exits
@@ -742,9 +814,10 @@ and high."
   that talks to the API goes through the typed `Client`; a raw-HTTP escape hatch like `proxy`
   is the one documented exception — call it out as such.
 - Never print or commit a real token; redact by default in dry-run and `config view`.
-- Never expose secret/instance flags (`--api-key`, `--show-token`, `--profile`, `--base-url`)
-  to the MCP tool surface, and exclude the `agent guard` command from it — an agent must not
-  read the key, switch instances, or disable its own rails.
+- Never expose secret/instance flags (`--api-key`, `--show-token`, the profile selector — under
+  both its configured `profile_flag` name and the `--profile` alias — and `--base-url`) to the MCP
+  tool surface, and exclude the `agent guard` command from it — an agent must not read the key,
+  switch instances, or disable its own rails.
 - Wire `cmd.Context()` from `ExecuteContext` through every call; a stray `context.Background()`
   silently breaks Ctrl-C cancellation. Annotate every resource command (read-only/write/
   destructive) in the generic builder, not per-command later.

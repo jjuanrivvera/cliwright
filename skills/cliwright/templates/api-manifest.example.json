@@ -1,11 +1,23 @@
 {
-  "_comment": "Spec-derived manifest (cliwright GOAL.md §11). Generated FROM the API's OpenAPI/docs, checked in, and enforced by scripts/spec-check.sh so the same API always yields the same CLI surface. Resources/order are derived from the spec, not chosen by taste.",
+  "_comment": "Spec-derived manifest (cliwright GOAL.md §0/§11). DERIVE it from an ENUMERATED method list — an OpenAPI/Postman/llms.txt, else the docs' full method index or a community machine spec — NOT model recall. Two gates enforce it: scripts/spec-check.sh proves the CLI surface ⊆ this manifest (consistency); scripts/spec-completeness.sh proves this manifest covers ≥90% of api_method_total (completeness). Resources/order are derived from the spec, not chosen by taste.",
   "binary": "__BINARY__",
   "base_url": "https://api.example.com/v1",
   "auth": "api-key-header",
   "pagination": "page",
+
+  "_completeness_comment": "api_method_total = the COUNT of methods/endpoints enumerated from api_method_source (the full API). spec-completeness.sh fails if covered/total < 90% with no recorded waiver in DECISIONS.md. Covered = sum of resources[].verbs + methods[]. A missing/zero total fails the gate (it means enumeration was skipped).",
+  "api_method_total": 7,
+  "api_method_source": "https://api.example.com/openapi.json",
+
+  "_profile_comment": "profile_flag/profile_noun name the multi-profile selector so it reads naturally per API: --bot for Telegram (a profile IS a bot), --instance for n8n, --account for accounting. Default 'profile'. --profile stays as a HIDDEN alias for back-compat. Default 'profile' when nothing fits better.",
+  "profile_flag": "profile",
+  "profile_noun": "profile",
+
   "resources": [
     { "name": "widgets",  "verbs": ["list", "get", "create", "update", "delete"], "key_fields": ["id", "name", "status"] },
     { "name": "gadgets",  "verbs": ["list", "get"], "read_only": true, "key_fields": ["id", "label"] }
-  ]
+  ],
+
+  "_methods_comment": "RPC-style / non-OpenAPI APIs (e.g. Telegram's sendMessage/getUpdates) that don't map cleanly to resource+verb CRUD MAY instead list flat method names here; spec-completeness.sh counts these toward coverage. Prefer resources[] when the API is REST-shaped.",
+  "methods": []
 }

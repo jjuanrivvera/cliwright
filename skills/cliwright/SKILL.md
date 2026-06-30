@@ -30,9 +30,11 @@ The playbook is self-contained: it does **not** depend on reading any other repo
    commands → Resource loop → Agent surface → Beyond-the-API → Tests & gates → Docs →
    Distribution → Packaging), committing per phase.
 4. **Gate on `make verify`.** The build is done only when the deterministic acceptance
-   gate passes — `make check` + coverage + `spec-check` (surface matches the API manifest)
-   + the atomic Definition-of-Done checklist + the judge rubric for the few subjective
-   items. See the "Acceptance gate" and "Determinism rules" sections in GOAL.md.
+   gate passes — `make check` + coverage + `spec-check` (CLI surface ⊆ the manifest) +
+   `spec-completeness` (manifest covers ≥ ~90% of the enumerated API, so a memory-authored
+   manifest can't wrap a fraction of it unnoticed) + the atomic Definition-of-Done checklist +
+   the judge rubric for the few subjective items. See the "Acceptance gate", "Determinism rules",
+   and §0 method-enumeration sections in GOAL.md.
 
 ## Driving it to completion (the loop)
 

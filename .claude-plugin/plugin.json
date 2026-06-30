@@ -1,11 +1,26 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "cliwright",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Spec-gated CLI factory — generate a complete, agent-ready, production-grade CLI for any REST/HTTP API, driven via /goal until a deterministic acceptance gate (make verify) passes.",
-  "author": { "name": "Juan Rivera", "url": "https://github.com/jjuanrivvera" },
+  "author": {
+    "name": "Juan Rivera",
+    "url": "https://github.com/jjuanrivvera"
+  },
   "homepage": "https://github.com/jjuanrivvera/cliwright",
   "repository": "https://github.com/jjuanrivvera/cliwright",
   "license": "MIT",
-  "keywords": ["cli", "code-generation", "scaffold", "api", "go", "cobra", "goreleaser", "mcp", "ai-agent", "goal", "ralph"]
+  "keywords": [
+    "cli",
+    "code-generation",
+    "scaffold",
+    "api",
+    "go",
+    "cobra",
+    "goreleaser",
+    "mcp",
+    "ai-agent",
+    "goal",
+    "ralph"
+  ]
 }

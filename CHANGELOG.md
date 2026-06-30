@@ -4,11 +4,20 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
-Two design fixes from the tgctl post-mortem (a hand-curated manifest wrapped only ~⅓ of the Telegram Bot API) and the `--profile` ergonomics review.
+## [0.3.0] — 2026-06-30
+
+Hardening from the tgctl & lemon-squeezy build post-mortems: API completeness, per-tool ergonomics, a leaner gate, CI/Windows fixes, and a self-contained skill.
 
 ### Added
 - **Method-enumeration step + completeness gate** (closes the narrow-surface root cause). The spec-check gate only ever proved CLI ⊆ manifest (consistency), never manifest == full API (completeness), so under-capture was invisible. GOAL.md §0 Step 1b now REQUIRES enumerating the complete method/endpoint set from a source (OpenAPI/Postman/`llms.txt`, else the docs' full method index or a community machine spec — Telegram → `ark0f/tg-bot-api`) BEFORE authoring the manifest, which must derive from that list, not model recall. A new `scripts/spec-completeness.sh` (template) compares the manifest's covered method count (`resources[].verbs` + `methods[]`) against the enumerated `api_method_total` and FAILS below ~90% unless a `coverage-waiver` is recorded in `DECISIONS.md`. Wired into `make verify` alongside `spec-check` (Makefile `verify`/`spec-completeness` targets). Manifest gains `api_method_total` + `api_method_source` (§0/§9/§11/§12).
 - **Configurable multi-profile flag name** (per-tool). New manifest/TARGET field `profile_flag`/`profile_noun` (default `"profile"`) names the multi-profile selector so it reads naturally — `--bot` for Telegram, `--instance` for n8n, `--account` for accounting. `--profile` is kept as a HIDDEN alias for back-compat; GOAL.md §1/§3 carry the root.go wiring snippet, and the MCP exclusion (§3b) + guardrails now exclude the selector under both its configured name and the `--profile` alias (§0 TARGET, §1, §3, §3b).
+
+### Changed
+- **Judge decoupled from `make verify`.** The LLM judge was part of `make verify`, so it re-ran on every later CI/dev invocation — draining tokens, non-deterministic, failing in CI (no agent). Now `make verify` is the deterministic gate (CI/dev), `make judge` is the LLM gate, and `make accept` (= `verify` + `judge`) is the build-acceptance gate the `/goal` loop binds to. Updated the Makefile template, GOAL.md §12 + the completion-promise bindings, SKILL.md, `ralph.sh`, and the template README.
+- **GOAL.md ships inside the skill** (`skills/cliwright/GOAL.md`), so a skill-only `npx skills add` install carries the playbook — no network fetch, no version skew, no dependency on another repo. All references updated to resolve under both plugin and skill-only installs.
+
+### Fixed
+- **CI hardened against recurring build traps.** The `ci.yml` template now builds golangci-lint/gosec/govulncheck from source with the job's Go (the prebuilt actions lagged the toolchain and choked on a go1.25 module — "configuration contains invalid elements"). GOAL.md test guidance now mandates deadlock-safe stdout capture (cobra `SetOut` / goroutine-drained `os.Pipe` — the Windows pipe-buffer hang) and path-portable tests (`filepath.Join`, `t.TempDir`). The fixes the per-build agents kept rediscovering are now baked into the template.
 
 ## [0.2.1] — 2026-06-24
 

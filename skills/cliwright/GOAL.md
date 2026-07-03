@@ -379,6 +379,61 @@ differ from the MCP tool prefix (tool patterns) — thread both. MCP-only operat
 hard guarantee; the Bash hook is best-effort (defeats quote/backslash tricks, not variable
 indirection).
 
+**Agent-guard hardening (MANDATORY — every one of these was a real, verified bypass or
+dead-config bug found in a fleet-wide audit of 6 generated CLIs; do not ship without them):**
+
+1. **The PreToolUse hook is required, not optional.** Permission deny rules alone are
+   literal prefixes — `./bin/<bin> …`, `/usr/local/bin/<bin> …`, `env X=1 <bin> …`,
+   `de""lete` quote-splits, and `;`/`|`/`&&` chaining all sidestep them. The hook is the
+   enforcement layer; the rules are belt-and-suspenders.
+2. **Anchored matching ERE (all four parts, exactly):** per blocked subcommand path `<P>`,
+   match `(^|[;&|([:space:]]+)([^[:space:]]*/)?<bin>[[:space:]]+<P>([[:space:];&|)]|$)` on
+   a cleaned string. The optional `([^[:space:]]*/)?` catches path-invoked binaries; the
+   leading class anchors the command position; the **trailing class must accept separators**
+   (`reset;true` glues `;` to the verb — space-or-EOL alone is a bypass for no-arg
+   destructive commands). Clean first: strip `\042 \047 \134`, collapse newlines. Verify
+   `my<bin>` (different binary with the name as a suffix) does NOT match.
+3. **No-jq fallback must flatten JSON punctuation** (`tr '\n{}:,' '     '`) before matching:
+   the compact payload glues the command to its key (`"command":"<bin> …"`), so without
+   flattening the anchor can never match and the branch is silently **fail-open**. The
+   no-jq test must build a strict PATH (symlink dir with only cat/tr/grep/sed) — merely
+   prepending an empty dir leaves jq reachable and the branch untested (this exact test
+   flaw masked the fail-open bug in two repos).
+4. **Nothing that mutates remote state may classify as read or local.** Two real escapes:
+   (a) verb-name collision — a leaf sharing its name with a read verb ("sync assignments"
+   vs "analytics assignments") → keep a full-path write-override map checked before the
+   read allowlist; (b) annotation gap — a hand-built command added without annotations
+   falling through as "local/utility" (`packages import`, `company update`) → add a
+   `TestEveryAPICommandIsAnnotated` walk with an explicit local-groups allowlist so
+   unannotated commands fail the build, and default unannotated/Extra commands to
+   write-or-destructive, never allowed.
+5. **Enumerate cobra aliases.** `msg delete`, `wf delete`, `exec prune` bypass rules and
+   hook that only list canonical paths — emit the full group-alias × verb-alias
+   cross-product everywhere (rules, hook array, opencode). If the CLI has user-defined
+   alias support (`<bin> alias set`), gate `alias set` itself.
+6. **Raw-api escape:** verify the emitted method patterns match the command's REAL syntax
+   (positional `api <METHOD> <PATH>` vs flag `-X` vs RPC method names — for RPC-style APIs
+   allowlist `get*` at the method position instead). Block DELETE/PUT/POST/PATCH
+   case-insensitively at the method position only, so a GET whose path contains "delete"
+   stays allowed.
+7. **Claude permission rules are literal prefixes, NOT regex.** `mcp__.*<bin>.*_(delete)`
+   matches nothing — dead config that reads as coverage. Emit exact tool names. (Hook
+   *matchers* in settings.json ARE regex; the two syntaxes differ.)
+8. **Emit real host schemas.** Codex: top-level `sandbox_mode` / `approval_policy`
+   (an invented `[sandbox]` table is silently ignored). OpenCode: `permission` (singular)
+   with a `bash` sub-map. And `--write` must actually write the files (never overwriting).
+9. **Ship the execution battery as tests** (`commands/agent_hook_test.go`): run the real
+   generated hook under bash with jq payloads, asserting at minimum — blocked cmd,
+   path-prefixed blocked cmd, glued-separator (`…;true`), quote/backslash/newline
+   obfuscation, chained (`;`/`|`/`&&`), env-prefixed → all DENY; read cmd, blocked verb
+   inside an argument, `cat <resource>_delete.go`, api GET with verb in path, `my<bin>`
+   → all ALLOW; MCP exact blocked tool DENY, read tool + near-miss (`…_delete2`) ALLOW;
+   plus the strict no-jq variants. Accepted, documented limitations: variable indirection,
+   shell aliases/eval (MCP-only mode is the hard guarantee), and the conservative denial of
+   a quoted blocked command inside an argument (`rg "<bin> orders refund" src/`) — the
+   quote-stripping that defeats `de""lete` makes these indistinguishable; deny is the safe
+   direction.
+
 ---
 
 ## 3c. Beyond the API (value-adds that differentiate)

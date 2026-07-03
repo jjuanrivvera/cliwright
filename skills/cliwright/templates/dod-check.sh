@@ -16,6 +16,10 @@ echo "Definition-of-Done checks for '$BIN':"
 # Agent surface
 have "mcp server command present"        "rg -lq 'ophis|mcp' commands/mcp.go"
 have "agent guard command present"       "test -f commands/agent.go"
+have "guard PreToolUse hook generator"   "rg -lq 'PreToolUse' commands/agent_hosts.go"
+have "guard hook execution battery"      "test -f commands/agent_hook_test.go"
+have "guard hook path-prefix hardening"  "rg -Fq '([^[:space:]]*/)?' commands/agent_hosts.go"
+have "guard no-jq JSON flattening"       "rg -Fq \"tr '\\n{}:,'\" commands/agent_hosts.go"
 
 # Output formats (atomic — one per format)
 for f in json yaml csv table; do

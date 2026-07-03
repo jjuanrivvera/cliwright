@@ -4,6 +4,14 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-07-02
+
+Hardening from a fleet-wide audit of the agent guard across the generated CLIs (canvas, alegra, n8n, tgctl, lemon-squeezy).
+
+### Added
+- **Mandatory agent-guard hook hardening** in GOAL.md §3b — a nine-point checklist, each item a real verified bypass or dead-config bug found in the audit: the PreToolUse hook is required (not just permission rules); the anchored ERE must include the `([^[:space:]]*/)?` path prefix and a separator-accepting trailing boundary; the no-jq fallback must flatten JSON punctuation (else it fails open) and its test must build a strict `PATH` that truly hides `jq`; nothing that mutates remote state may classify as read/local (verb collisions + annotation gaps); enumerate cobra aliases; verify the raw-api escape's real syntax; Claude permission rules are literal prefixes, not regex; emit real Codex/OpenCode schemas; and ship the hook execution battery as tests.
+- **`dod-check.sh` gates** for the hook generator, the execution-battery test file, the path-prefix hardening, and the no-jq JSON flattening.
+
 ## [0.3.0] — 2026-06-30
 
 Hardening from the tgctl & lemon-squeezy build post-mortems: API completeness, per-tool ergonomics, a leaner gate, CI/Windows fixes, and a self-contained skill.

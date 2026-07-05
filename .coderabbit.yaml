@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit config — cliwright (Shell meta-tool that forges CLIs).
+reviews:
+  profile: chill
+  poem: false
+  sequence_diagrams: false
+  auto_review:
+    ignore_title_keywords: ["WIP", "release:", "build(deps)"]
+  path_filters:
+    - "!**/testdata/**"
+  path_instructions:
+    - path: "**/*.sh"
+      instructions: |
+        Follow AGENTS.md. Comments explain WHY, not WHAT. Quote variables; `set -euo pipefail`.
+        No secrets in scripts. Flag unquoted expansions, missing error handling, and unsafe `eval`/`rm`.
+knowledge_base:
+  code_guidelines:
+    enabled: true

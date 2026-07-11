@@ -31,6 +31,9 @@ have "--dry-run prints equivalent curl"  "rg -lq 'dry-run' . && rg -lq 'curl' in
 have "Ctrl-C: signal.NotifyContext"      "rg -lq 'signal.NotifyContext' cmd"
 have "no stray context.Background()"     "! rg -lq 'context.Background()' commands internal/api"
 have "secrets in OS keyring"             "rg -q 'zalando/go-keyring' go.mod"
+# Interactive secret input must be hidden. fmt.Scan/Scanln/Scanf echo the secret to the
+# terminal and stall on long pastes — read via promptSecret (term.ReadPassword) instead.
+have "no plaintext stdin reads (fmt.Scan*)"  "! rg -lq --glob '!*_test.go' 'fmt\.Scan(ln|f)?\(' ."
 have "idempotent-only retry"             "rg -lq 'idempotent|MethodGet|MethodPut|MethodDelete' internal/api"
 
 # Meta commands (atomic — one per command)

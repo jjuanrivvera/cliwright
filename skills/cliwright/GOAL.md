@@ -157,6 +157,11 @@ transfer to other languages, but unless I say otherwise, build it in Go.
   (`zalando/go-keyring`: macOS Keychain / Linux Secret Service / Windows Cred Mgr),
   with an encrypted-file fallback. Never write a token to config-in-repo, code, or
   commit messages. Redact `Authorization` in dry-run unless `--show-token`.
+  **Read secrets with a hidden prompt** — never `fmt.Scanln`/`fmt.Scan`/`fmt.Scanf`, which
+  echo the secret to the terminal (it lands in scrollback) and stall on long pastes (API keys
+  are often long JWTs). Use `promptSecret` from `commands/prompt.go` (`term.ReadPassword` on a
+  TTY, line-read fallback for pipes) for tokens/keys/passwords/OAuth codes, and `promptLine`
+  for non-secret input (base URL, y/n). `dod-check.sh` fails on any `fmt.Scan*` call.
 - **Auth providers (when the API supports more than one method).** Don't hardcode a single
   scheme. `internal/auth` exposes an **`Authenticator` interface** — `Apply(req)` (+
   `Refresh(ctx)`/`Validate(ctx)` for OAuth) — with **one implementation per method**

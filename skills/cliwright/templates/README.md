@@ -27,6 +27,7 @@ leave those intact.
 | `install.sh` | `./install.sh` (curl-pipe installer; fill `REPO`/`BINARY`/`VERSION` header; keep `shellcheck`-clean) |
 | `ci.yml` | `./.github/workflows/ci.yml` |
 | `cover-check.sh` `dod-check.sh` `spec-check.sh` `judge.sh` | `./scripts/` (chmod +x) |
+| `prompt.go` | `commands/prompt.go` (promptSecret/promptLine — read secrets hidden, never `fmt.Scan*`) |
 | `resource.api.go.tmpl` | `internal/api/<resource>.go` (one per resource) |
 | `resource.cmd.go.tmpl` | `commands/<resource>.go` (one per resource) |
 | `resource_test.go.tmpl` | `internal/api/<resource>_test.go` |

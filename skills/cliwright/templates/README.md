@@ -10,6 +10,7 @@ Replace these literal tokens during generation:
 | Token | Meaning | Example |
 |---|---|---|
 | `__BINARY__` | command users type | `stripe` |
+| `__BINARY_UPPER__` | binary upper-cased, for env var names | `STRIPE` |
 | `__MODULE__` | Go module path | `github.com/me/stripe-cli` |
 | `__OWNER__` | GitHub owner/org | `me` |
 | `__REPO__` | repo name | `stripe-cli` |
@@ -23,6 +24,7 @@ leave those intact.
 |---|---|
 | `Makefile` | `./Makefile` (`make verify` = deterministic gate; `make accept` = build-acceptance) |
 | `goreleaser.yaml` | `./.goreleaser.yaml` |
+| `install.sh` | `./install.sh` (curl-pipe installer; fill `REPO`/`BINARY`/`VERSION` header; keep `shellcheck`-clean) |
 | `ci.yml` | `./.github/workflows/ci.yml` |
 | `cover-check.sh` `dod-check.sh` `spec-check.sh` `judge.sh` | `./scripts/` (chmod +x) |
 | `resource.api.go.tmpl` | `internal/api/<resource>.go` (one per resource) |

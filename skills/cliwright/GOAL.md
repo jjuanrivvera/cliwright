@@ -561,6 +561,18 @@ tag, skip pre-releases** (`if: !contains(ref_name,'-')`). Commit locally regardl
 - **Run `goreleaser check` in CI** (a step in `ci.yml`, not just the snapshot job) so a
   deprecated/invalid config breaks on PR, not at tag time when the release is half-done.
 
+**Install script** (`install.sh` at the repo root — copy `templates/install.sh`, fill the
+per-tool header `REPO`/`BINARY`/`VERSION`): a zero-infra, POSIX `sh` install path for
+macOS/Linux — `curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | sh`.
+It hits the GitHub releases API for the latest tag (`<BINARY>_VERSION` to pin), downloads
+`checksums.txt`, discovers the matching `_<os>_<arch>.tar.gz` **from the checksums file** (so it
+never hardcodes GoReleaser's `name_template`), **verifies the SHA-256**, and installs to
+`INSTALL_DIR` (default `/usr/local/bin`, falling back to `~/.local/bin` without sudo). Windows
+users get Scoop. Must be **`shellcheck`-clean** — a `# shellcheck disable=` directive goes in
+front of a whole compound command (e.g. the `case`), never on an individual branch. Feature it
+as the **first** install method in the README so cross-platform install is visible without
+explanation.
+
 **Makefile** (standard targets): `build install uninstall run dev check fmt vet lint
 tidy test test-race test-coverage cover-check docs-gen docs-serve docs-build snapshot
 setup-hooks clean`. `make check` = fmt + vet + lint + test (the local gate).
@@ -735,6 +747,8 @@ func TestWidgets_List(t *testing.T) {
       ONLY if `distribution_scope` includes `+release` — it is not part of "done" for a local
       build.** When in scope, the published release must `brew`/`go install` and run
       (Gatekeeper-clean on arm64).
+- [ ] **Install script** (`install.sh`) present at the repo root, `shellcheck`-clean, checksum-verifying,
+      and featured as the first README install method.
 - [ ] CI (`ci.yml`), release (`release.yml`), docs (`docs.yml`), dependabot configured.
 - [ ] Docs: generated command reference + README quickstart; AGENTS.md present.
 - [ ] (If distributing via Claude Code) plugin.json + marketplace.json + SKILL.md + references shipped.

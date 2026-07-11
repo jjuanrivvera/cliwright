@@ -4,6 +4,22 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-07-11
+
+### Added
+- **install.sh is part of the standard** (GOAL §5/§9, `templates/install.sh`, DoD gate): every
+  generated CLI ships a zero-infra, checksum-verifying `curl | sh` installer for macOS/Linux that
+  discovers the release archive from `checksums.txt` — naming-agnostic across goreleaser's
+  `_amd64`/`_x86_64` (and `arm64`/`aarch64`) conventions.
+- **`commands/prompt.go` template** — `promptSecret` (`term.ReadPassword`, pipe fallback) and
+  `promptLine`, so generated CLIs read input through the right helpers.
+
+### Security
+- **Secrets must be prompted hidden.** GOAL §1 now requires reading tokens/keys/passwords/OAuth
+  codes via a hidden prompt, and `dod-check.sh` fails on any `fmt.Scan`/`Scanln`/`Scanf` call —
+  which echo the secret in plaintext (into scrollback) and stall on long pastes. Two generated
+  CLIs had shipped this (lemon-squeezy-cli, canvas-cli); both fixed.
+
 ## [0.3.1] — 2026-07-02
 
 Hardening from a fleet-wide audit of the agent guard across the generated CLIs (canvas, alegra, n8n, tgctl, lemon-squeezy).

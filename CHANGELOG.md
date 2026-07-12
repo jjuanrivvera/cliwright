@@ -4,6 +4,17 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-07-12
+
+### Fixed
+- **`templates/prompt.go` reads the hidden secret in raw mode.** `term.ReadPassword` reads in
+  canonical terminal mode, capped at `MAX_CANON` (1024 bytes on macOS): pasting a longer secret
+  (a ~970-char JWT) fills the line buffer and the terminal blocks until Ctrl-C — the "prompt hangs
+  on a long key" bug. The template now reads via `readSecretRaw`/`scanSecretLine` (raw mode, no
+  line-length limit; Ctrl-C cancels, Backspace edits, non-TTY pipes fall back to a line read), with
+  `scanSecretLine` split out so the byte handling is unit-testable without a PTY. Surfaced on
+  lemon-squeezy-cli's `auth login` (HTTP 401 from a truncated key) and fixed fleet-wide.
+
 ## [0.3.2] — 2026-07-11
 
 ### Added

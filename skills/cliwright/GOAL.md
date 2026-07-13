@@ -493,7 +493,7 @@ research and record the decision (and any "not applicable") in `DECISIONS.md`. T
 checklist — a CLI that matches none of these is still complete.
 
 **Storage — pick at most one (they are NOT the same thing):**
-- **Live event-store + `log`/`listen`** — *when* the API pushes an **ephemeral event stream**
+- **Live event-store + `log`/`listen`** (copy `templates/store.events.go`) — *when* the API pushes an **ephemeral event stream**
   (WebSocket / RTM / webhook / long-poll) **or** has no durable history/search endpoint for what the
   CLI sends and sees. Then a local DB is the only searchable system-of-record. Ships: a per-profile
   SQLite store (**`modernc.org/sqlite`** — pure Go, keeps `CGO_ENABLED=0`; dir `0700`/file `0600`;
@@ -505,7 +505,7 @@ checklist — a CLI that matches none of these is still complete.
   a `--no-store` flag (and dry-run never opens the store); `Close()` plumbed through the client
   (Windows can't unlink an open-handle DB). **Exclude `listen` from the MCP surface** (an agent hangs
   on a blocking stream). [slackctl, tgctl]
-- **Offline read-cache + `sync`/`--offline`/`history`** — *when* the API is **pull-only / read-heavy
+- **Offline read-cache + `sync`/`--offline`/`history`** (copy `templates/store.cache.go`) — *when* the API is **pull-only / read-heavy
   with date-scoped, time-series data** (health, metrics, analytics) and users want offline reads or
   trend export. Weaker than a system-of-record (the API can re-`GET` it). Ships: per-profile SQLite
   (one row per profile/metric/date), reads cache-as-they-go, `sync [--from --to]` backfills a range,
@@ -535,7 +535,7 @@ checklist — a CLI that matches none of these is still complete.
   resources were fetched** (anti-truncation guard). [alegra, canvas]
 
 **Client / auth shape — add on the trigger:**
-- **Universal write flags** `--data`/`--set`/`--file`(+stdin) — *when* any resource is writable
+- **Universal write flags** `--data`/`--set`/`--file`(+stdin) (copy `templates/write.go`) — *when* any resource is writable
   (≈always). Create/update take documented attrs generically; never hardcode per-resource field flags.
   The §8 generic-core builder stamps these on every writable resource. [lsqueezy, alegra, canvas]
 - **Multi-group / path-routed credential classes** — *when* the API exposes several base-path groups
@@ -553,7 +553,7 @@ checklist — a CLI that matches none of these is still complete.
   `~/.garminconnect` → a go-garmin session). [garminctl]
 
 **Ergonomics / robustness — add on the trigger:**
-- **Terminal-escape sanitization of API text** — *when* human/table output can contain free-text API
+- **Terminal-escape sanitization of API text** (copy `templates/sanitize.go`) — *when* human/table output can contain free-text API
   fields (≈always). Strip ANSI/OSC/control chars in the human table+error path ONLY (json/yaml/csv stay
   byte-faithful); fast-path when clean. A distinct control from the CSV-injection guard — a value like
   `\x1b]0;pwned\a` can rewrite the terminal title. Belongs in the shared renderer. [garminctl]

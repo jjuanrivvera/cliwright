@@ -4,6 +4,21 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-13
+
+### Added
+- **Ready-to-use templates for the highest-reuse §3d patterns** — so an agent copies proven code
+  instead of re-deriving it (the token savings), while staying flexible via documented adaptation
+  notes (each template is generic/org-agnostic, gofmt-clean; the event-store compiles standalone):
+  - `templates/sanitize.go` — terminal-escape sanitizer for API text in the human/table path.
+  - `templates/write.go` — universal `--data`/`--set`/`--file`(+stdin) write flags → attributes map,
+    with the JSON:API envelope + `--rel` as a documented adaptation.
+  - `templates/store.cache.go` — offline-cache SQLite store (pull-only time-series flavor).
+  - `templates/store.events.go` — event-store SQLite store (live-stream flavor: FTS5-or-LIKE search
+    with automatic fallback, `(profile,topic,ts)` dedup, prune, + the warn-and-continue `Recorder`
+    wiring note).
+  §3d now points each of those patterns at its template.
+
 ## [0.5.0] — 2026-07-13
 
 Distilled from a full audit of the 9-CLI fleet: fold the genuinely-reusable patterns each CLI evolved

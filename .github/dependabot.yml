@@ -1,0 +1,11 @@
+# .github/dependabot.yml — keeps GitHub Actions current (grouped). No gomod ecosystem:
+# this repo has no Go module.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

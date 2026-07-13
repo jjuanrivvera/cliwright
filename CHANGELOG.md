@@ -4,6 +4,36 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-13
+
+Distilled from a full audit of the 9-CLI fleet: fold the genuinely-reusable patterns each CLI evolved
+back into the playbook — with the CONDITION under which to apply each, so cliwright knows *when*, not
+just how. (Org-specific fleet infrastructure — the reusable CI/release workflows — deliberately stays
+out of cliwright; it lives in the org's own AGENTS.md.)
+
+### Added
+- **§3d Conditional patterns catalog** — a trigger-keyed menu of ~18 proven patterns so cliwright
+  applies each only when its condition holds (a chat CLI needs an event-store, a metrics CLI an
+  offline cache, an accounting CLI neither): local **event-store** + `log`/`listen` (API pushes a
+  stream / has no history endpoint) vs **offline cache** + `sync`/`history` (pull-only time-series);
+  **spec-contract test** (manifest carries real paths); **binary integration tests** (`-tags
+  integration`); **universal write flags** (`--data`/`--set`/`--file`); **multi-group / path-routed
+  credentials**; **adopt-an-existing-typed-library** build-mode; **terminal-escape sanitization** of
+  API text; **options structs + `Validate()`**; **redacting `slog`**; **`-coverpkg -count=1`**;
+  **`smoke.yml`/`spec-sync.yml`** drift workflows; **batch pool**, **response cache**, **self-update**,
+  **drop-in symlink**, **cmdtest harness**, **import-sibling-session**. §0 research now evaluates the
+  triggers up front and records N/A in `DECISIONS.md`.
+
+### Changed
+- **Canonical root construction** (settles a three-way fleet drift): `init()` appends to a registrar
+  queue and a `NewRootCmd(deps)` constructor drains it — thin `init()` registration **and** a testable
+  no-mutable-global-root tree. Bans both mutating a package-level `rootCmd` and hand-writing
+  `newXCmd()` per resource; `dod-check` should reject a directly-mutated global root.
+
+### Fixed
+- GOAL.md §1 prose still said `term.ReadPassword`; the template already ships raw-mode `readSecretRaw`.
+  Corrected (canonical-mode `ReadPassword` caps at `MAX_CANON`=1024 and hangs on long pasted keys).
+
 ## [0.4.0] — 2026-07-13
 
 ### Fixed

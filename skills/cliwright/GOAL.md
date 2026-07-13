@@ -74,6 +74,12 @@ everything, skip questions and start building.
   for this API (e.g. `@n8n/cli`). If one exists, summarize its scope and the build-vs-adopt
   trade-off — but **do not decide for me and do not refuse to build**: surface it; the choice
   to build anyway (for coverage, fleet consistency, a missing feature) is **mine** (§0 Step 2).
+- **Conditional-pattern triggers (§3d)** → decide these now, they select which optional modules to
+  build: does the API push an **event stream** or lack a history/search endpoint (→ event-store +
+  `log`/`listen`)? is it **pull-only, time-series** (→ offline cache + `sync`/`history`)? multiple
+  **credential groups** under one header (→ API groups)? a re-fetchable **machine spec / docs index**
+  (→ `spec-sync`)? durable **read-only creds** available (→ `smoke.yml`)? a **mature typed client
+  library** for this API (→ adopt it as the core)? Record each answer (incl. "N/A") in `DECISIONS.md`.
 
 If the docs are ambiguous or contradictory, **state the assumption you're making** and
 proceed — don't turn it into a question.
@@ -159,8 +165,10 @@ transfer to other languages, but unless I say otherwise, build it in Go.
   commit messages. Redact `Authorization` in dry-run unless `--show-token`.
   **Read secrets with a hidden prompt** — never `fmt.Scanln`/`fmt.Scan`/`fmt.Scanf`, which
   echo the secret to the terminal (it lands in scrollback) and stall on long pastes (API keys
-  are often long JWTs). Use `promptSecret` from `commands/prompt.go` (`term.ReadPassword` on a
-  TTY, line-read fallback for pipes) for tokens/keys/passwords/OAuth codes, and `promptLine`
+  are often long JWTs). Use `promptSecret` from `commands/prompt.go` (raw-mode `readSecretRaw` on
+  a TTY — **not** `term.ReadPassword`, whose canonical mode caps the line at `MAX_CANON`=1024 bytes
+  and HANGS on a long pasted key/JWT; the template ships the raw-mode read + a `scanSecretLine` byte
+  scanner + line-read fallback for pipes) for tokens/keys/passwords/OAuth codes, and `promptLine`
   for non-secret input (base URL, y/n). `dod-check.sh` fails on any `fmt.Scan*` call.
 - **Auth providers (when the API supports more than one method).** Don't hardcode a single
   scheme. `internal/auth` exposes an **`Authenticator` interface** — `Apply(req)` (+
@@ -266,6 +274,14 @@ and stay consistent across the whole CLI:**
   UpdateMethod, Extra}`. `UpdateMethod` (PUT default; PATCH where the API requires it) is a
   generic-core **knob**, not a per-resource override — set it in the spec, never copy-paste CRUD.
   A new resource = a type + a `Client` accessor + one `registerResource(...)` in `init()`.
+  **Root construction — the canonical form (pick ONE; the fleet drifted three ways).** `init()`
+  appends to a package-level *registrar queue* (`var registrars []func(*cobra.Command)`), and a
+  **`NewRootCmd(deps)` constructor drains that queue** onto a freshly-built root. This keeps
+  registration thin and declarative in `init()` **and** yields a testable, no-mutable-global-root tree
+  (every test builds its own; deps injected). Do NOT mutate a package-level `var rootCmd` from inside
+  `init()` (a global root leaks state across tests), and do NOT hand-write `newXCmd()` + explicit
+  `AddCommand` per resource (that's exactly the per-resource boilerplate the generic core exists to
+  kill). `dod-check.sh` should reject a package-level `rootCmd` that command files mutate directly.
 
 - **Pattern B — Service-layer (only for irregular APIs** with per-resource includes,
   masquerade, or special non-CRUD endpoints). Each resource gets a
@@ -465,6 +481,101 @@ they were the biggest differentiators in practice:
 
 These are optional, but a CLI that only mirrors the API is commoditized; these are what make
 it worth installing over `curl` or the first-party tool.
+
+---
+
+## 3d. Conditional patterns catalog (apply on the TRIGGER, not by default)
+
+The fleet proved a set of patterns beyond the §1 standard. Each has a **trigger** — generate it only
+when its condition holds. Do NOT bolt every pattern onto every CLI: a chat CLI needs an event-store, a
+metrics CLI needs an offline cache, an accounting CLI needs neither. Detect the trigger during §0
+research and record the decision (and any "not applicable") in `DECISIONS.md`. This is a menu, not a
+checklist — a CLI that matches none of these is still complete.
+
+**Storage — pick at most one (they are NOT the same thing):**
+- **Live event-store + `log`/`listen`** — *when* the API pushes an **ephemeral event stream**
+  (WebSocket / RTM / webhook / long-poll) **or** has no durable history/search endpoint for what the
+  CLI sends and sees. Then a local DB is the only searchable system-of-record. Ships: a per-profile
+  SQLite store (**`modernc.org/sqlite`** — pure Go, keeps `CGO_ENABLED=0`; dir `0700`/file `0600`;
+  profile name re-validated against path traversal); an **`api.Recorder` observer** (the api package
+  never imports store; fire-and-forget; **warn-once-and-continue** so a broken store never fails a
+  write; `WithRecorder` client option); `log`/`log search` (FTS5 `MATCH` with a **mandatory LIKE-scan
+  fallback** — minimal SQLite omits FTS5; values always bound, fragments static); a
+  `listen`/`webhook listen` capture (**record BEFORE display filters**, never filter-then-capture);
+  a `--no-store` flag (and dry-run never opens the store); `Close()` plumbed through the client
+  (Windows can't unlink an open-handle DB). **Exclude `listen` from the MCP surface** (an agent hangs
+  on a blocking stream). [slackctl, tgctl]
+- **Offline read-cache + `sync`/`--offline`/`history`** — *when* the API is **pull-only / read-heavy
+  with date-scoped, time-series data** (health, metrics, analytics) and users want offline reads or
+  trend export. Weaker than a system-of-record (the API can re-`GET` it). Ships: per-profile SQLite
+  (one row per profile/metric/date), reads cache-as-they-go, `sync [--from --to]` backfills a range,
+  `--offline` serves without network, `history <metric>` renders one-row-per-day (CSV-ready). Exclude
+  bulk `sync` from MCP. [garminctl]
+
+**Testing — add on the trigger:**
+- **Spec-contract test** — *when* the manifest carries real endpoint **method+paths** (not just
+  resource/verb names). A network-free AST test harvests every `/api/v1/...` path literal +
+  `fmt.Sprintf` format from `internal/api/`, normalizes params, and asserts each hits a documented
+  endpoint (a `knownUndocumented` allowlist needs written justification). Catches wrong-URL bugs the
+  surface-level `spec-check` cannot. [canvas]
+- **Binary-level integration tests** (`-tags integration`) — *when* the CLI ships a distributable
+  binary (≈always past MVP). `TestMain` compiles the binary once, then black-box execs it with an
+  isolated `HOME` + httptest mock API, asserting exit codes, table/JSON/CSV output, `--dry-run` token
+  redaction, and `main()` alias-expansion — all of which in-process cobra tests miss. [canvas]
+- **`-coverpkg=./... -count=1` coverage** — *when* coverage is earned by cross-package **integration**
+  tests (a `commands_test`/e2e driving `internal/api` via httptest), not same-package unit tests.
+  Without `-coverpkg` those tests don't credit the code they exercise; without `-count=1` a cached
+  merge under-reports. Keep the same flags in the Makefile so local == CI. [lsqueezy]
+
+**Drift-detection workflows — add on the trigger:**
+- **`smoke.yml`** — *when* durable read-only credentials can live as a CI secret. A scheduled,
+  read-only `-tags smoke` run against the LIVE API that opens an issue on struct-vs-API drift. [alegra]
+- **`spec-sync.yml`** — *when* a machine spec / docs index exists at a stable, re-fetchable URL.
+  Weekly re-derives the manifest and opens a PR on drift; **refuses to write a manifest if < ~80% of
+  resources were fetched** (anti-truncation guard). [alegra, canvas]
+
+**Client / auth shape — add on the trigger:**
+- **Universal write flags** `--data`/`--set`/`--file`(+stdin) — *when* any resource is writable
+  (≈always). Create/update take documented attrs generically; never hardcode per-resource field flags.
+  The §8 generic-core builder stamps these on every writable resource. [lsqueezy, alegra, canvas]
+- **Multi-group / path-routed credential classes** — *when* the API exposes several base-path groups
+  or credential tiers under **one** auth header (application `/api/v1` + platform `/platform` + public
+  `/public` unauth). Route the token by path prefix (`tokenFor(path)`) — a first-class "API group"
+  concept, distinct from the §1 Authenticator (which picks the *scheme*, not *which of N tokens*).
+  [wootctl]
+- **Adopt an existing typed library as the core** — *when* a mature typed client library (especially
+  one exposing an endpoint/command registry) already exists for the API. Wrap it, promote its registry
+  through your own formatter (so `-o table/yaml/csv` works), and add keyring/profiles/agent-guard/
+  packaging on top — instead of re-deriving every endpoint. A THIRD build-mode beyond from-scratch and
+  build-vs-adopt-the-whole-CLI. [garminctl wraps go-garmin]
+- **Import a sibling tool's on-disk session** — *when* another ecosystem tool already stores a reusable
+  session/token on disk. `auth import --from <dir>` seeds the keyring to skip re-login/MFA (garth's
+  `~/.garminconnect` → a go-garmin session). [garminctl]
+
+**Ergonomics / robustness — add on the trigger:**
+- **Terminal-escape sanitization of API text** — *when* human/table output can contain free-text API
+  fields (≈always). Strip ANSI/OSC/control chars in the human table+error path ONLY (json/yaml/csv stay
+  byte-faithful); fast-path when clean. A distinct control from the CSV-injection guard — a value like
+  `\x1b]0;pwned\a` can rewrite the terminal title. Belongs in the shared renderer. [garminctl]
+- **Options structs + `Validate()`** — *when* commands have required/interdependent flags or custom
+  (non-CRUD) verbs. A per-command struct holds all flags (no package-level flag state); validation
+  fires before any HTTP call. Default for Pattern-B commands. [canvas]
+- **Structured `slog` logging with secret redaction** — *when* `--debug`/`-v` should emit structured
+  traces (agent-friendly). JSON handler to stderr with a `ReplaceAttr` that redacts
+  token/password/secret → `***`. [canvas]
+- **`RunCommandTest` cmdtest harness** — *when* commands write to `os.Stdout` (≈always, cobra). A
+  table-driven tester with a goroutine-drained `os.Pipe` (fixes the Windows pipe-buffer deadlock).
+  [canvas]
+- **Generic batch / worker-pool** — *when* bulk mutations come from a file/CSV. `ProcessGeneric[T]`
+  bounded pool, stop-on-error, partial-failure summary that exits non-zero. [canvas]
+- **Response cache** (TTL / disk) — *when* the API is read-heavy AND rate-limited or slow, or does
+  frequent name→ID resolution. Skip for cheap/fast APIs (most). [canvas]
+- **Binary self-update** — *when* distributed by direct download (not only brew/scoop, which
+  self-update). GitHub-release binary self-replace + a throttled startup check. [canvas]
+- **Drop-in symlink** — *when* an official first-party CLI with a known binary name exists. Ship a
+  `<official-binary>` → your CLI symlink (interactive-only; your surface is a superset). [wootctl ships
+  `chatwoot`]
+- **REPL / interactive shell** — optional; exploratory use; low priority. [canvas]
 
 ---
 

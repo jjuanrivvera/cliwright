@@ -1,0 +1,21 @@
+# .github/dependabot.yml — copied into a generated CLI by cliwright (GOAL.md §6).
+# Keeps GitHub Actions and Go dependencies current. Grouped so one PR per ecosystem per week,
+# not a flood. This is also the fleet's early-warning for dependency CVEs: a grouped bump PR
+# arrives before govulncheck goes red on a released dep.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ["*"]

@@ -4,6 +4,26 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-13
+
+### Fixed
+- **CI/release/docs templates now read `go-version-file: go.mod`, not `go-version: stable`.** This
+  was the root cause of a fleet-wide exposure: `stable` grabs the newest Go, so `govulncheck` runs
+  against an already-patched stdlib and stays GREEN even when the module's declared toolchain floor
+  is behind — a real stdlib CVE hides behind a passing CI. Reading the floor from `go.mod` makes CI
+  test what users actually build. GOAL.md §6 previously recommended `stable`; it now prescribes
+  `go-version-file` with the reasoning. Every CLI generated from here on is unaffected; existing
+  generated CLIs should flip the same four lines.
+
+### Added
+- **`templates/release.yml`, `templates/docs.yml`, `templates/dependabot.yml`.** These three
+  workflows were previously generated ad-hoc from GOAL.md prose, so they drifted per repo
+  (goreleaser-action v6/v7, cosign-installer v3/v4) and Dependabot ended up missing entirely on
+  some repos. Shipping them as templates makes the generated `.github/` deterministic. The
+  `dependabot.yml` (weekly grouped gomod + github-actions) doubles as dependency-CVE early warning.
+- A note in `templates/ci.yml` on when to add `-coverpkg=./...` (coverage that relies on
+  cross-package integration tests under-reports without it).
+
 ## [0.3.3] — 2026-07-12
 
 ### Fixed

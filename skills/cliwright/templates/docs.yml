@@ -1,0 +1,24 @@
+# docs.yml — copied into a generated CLI by cliwright (GOAL.md §6).
+# Regenerate the command reference from the cobra tree and publish the MkDocs site to gh-pages.
+# go-version-file: go.mod for the same reason as ci.yml/release.yml — one declared toolchain.
+name: Docs
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'commands/**', 'mkdocs.yml']
+
+permissions:
+  contents: write   # gh-pages push
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.x' }
+      - run: pip install mkdocs-material
+      - run: make docs-gen
+      - run: mkdocs gh-deploy --force

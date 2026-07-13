@@ -1,10 +1,16 @@
 # .github/workflows/ci.yml — copied into a generated CLI by cliwright (GOAL.md §6).
-# Key trap: build the linters/scanners (golangci-lint, gosec, govulncheck) FROM SOURCE with
-# this job's Go via `go install ...@latest` — do NOT pin them and do NOT lean on the prebuilt
-# golangci-lint-action / gosec ACTION. The prebuilt binaries lag the Go toolchain (they target
-# an older Go and can't analyze a module that already moved to the next Go release, e.g. a
-# go1.25 module under a Go-1.24 scanner → "configuration contains invalid elements" /
-# "invalid array length -delta*delta"). Compiling @latest here always matches the module's Go.
+#
+# Two traps, each paid for once:
+#   1. go-version-file: go.mod (NOT go-version: stable). `stable` grabs the newest Go, so
+#      govulncheck runs against an already-patched stdlib and stays GREEN even when the module's
+#      declared toolchain floor is behind — a real stdlib CVE hides. Reading the floor from go.mod
+#      makes CI test what users actually build, and go red when the floor needs a bump. Keep the
+#      go.mod `go`/`toolchain` directive current (that's what gets tested and shipped).
+#   2. Build the linters/scanners (golangci-lint, gosec, govulncheck) FROM SOURCE with this job's
+#      Go via `go install ...@latest` — do NOT pin them and do NOT lean on the prebuilt
+#      golangci-lint-action / gosec ACTION. The prebuilt binaries lag the Go toolchain (they target
+#      an older Go and can't analyze a module already on the next Go release, e.g. a go1.25 module
+#      under a Go-1.24 scanner → "configuration contains invalid elements"). @latest always matches.
 name: CI
 on:
   push: { branches: [main, develop] }
@@ -18,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
+        with: { go-version-file: go.mod }
       - run: gofmt -l . | tee /dev/stderr | (! read)
       - run: go vet ./...
       - name: golangci-lint
@@ -37,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
+        with: { go-version-file: go.mod }
       - name: govulncheck (blocking)
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -59,7 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
+        with: { go-version-file: go.mod }
+      # Add -coverpkg=./... here if coverage relies on cross-package integration tests (e.g. a
+      # commands_test that drives internal/api); without it those tests don't credit the code they
+      # exercise and the gate under-reports. Keep the same flag in the Makefile so local == CI.
       - run: go test -race ./... -coverprofile=coverage.out
       - name: coverage gate (ubuntu only)
         if: matrix.os == 'ubuntu-latest'
@@ -72,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: stable }
+        with: { go-version-file: go.mod }
       - uses: goreleaser/goreleaser-action@v6
         with: { args: check }
       - uses: goreleaser/goreleaser-action@v6

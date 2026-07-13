@@ -481,8 +481,11 @@ the toolchain: build golangci-lint, gosec, and govulncheck FROM SOURCE with the 
 prebuilt `golangci-lint-action` / `securego/gosec` Action. A pinned/prebuilt scanner lags the
 Go toolchain and can't analyze a module already on the next Go release (e.g. a go1.25 module
 under a Go-1.24 linter → "configuration contains invalid elements"); this cost real redo cycles
-in practice. Pin `go-version` consistently across every job (use `stable`, or the module's
-exact Go) so lint/security/test/build all run the same toolchain as `go.mod`.**
+in practice. Set `go-version-file: go.mod` in every job (NOT `go-version: stable`) so
+lint/security/test/build all run the module's declared toolchain — and govulncheck tests the
+floor users actually build. `stable` silently grabs the newest Go, so govulncheck passes against
+an already-patched stdlib while the declared floor stays vulnerable — a real CVE hides behind a
+green CI. Keep the `go.mod` `go`/`toolchain` directive current; that is what CI tests and ships.**
 
 **Phase B — Client core.** `internal/api/{client,resource,pagination,types,errors,retry,ratelimit}.go`.
 Implement auth, dry-run curl, adaptive rate limit, idempotent retry, the generic
@@ -609,17 +612,22 @@ setup-hooks clean`. `make check` = fmt + vet + lint + test (the local gate).
   or analyze a module already on a newer Go (the `x/tools` `invalid array length -delta*delta`
   failure, or golangci's "configuration contains invalid elements"). `@latest` compiled in the
   job always matches the module's Go, and govulncheck's vuln DB is fetched live so the binary
-  version barely affects determinism. Pin `go-version` the same way in every job (`stable` or
-  the module's exact Go) so lint/security/test/build share one toolchain. Standalone gosec
+  version barely affects determinism. Set `go-version-file: go.mod` in every job (not
+  `go-version: stable`) so lint/security/test/build share the module's declared toolchain;
+  `stable` lets govulncheck pass against an already-patched stdlib while the declared floor stays
+  vulnerable, so a stdlib CVE hides behind a green CI. Standalone gosec
   honors `#nosec G404` (not golangci's `//nolint:gosec`), and for a CLI it false-positives on
   **G404** (non-crypto jitter RNG) and **G703/G304** (writing to a user's own `--out`/input
   path) — suppress those with a justified `#nosec`. `test` matrix (ubuntu/macos/windows;
   `-race`; coverage gate ≥80% on ubuntu; codecov), `build` (`goreleaser check` then GoReleaser
   snapshot, skip sign/sbom/docker).
-- **`release.yml`** (tag `v*`): GoReleaser full pipeline (Buildx, GHCR login, cosign, syft,
-  `release --clean`).
-- **`docs.yml`** (push to main touching docs/commands): regenerate refs, `mkdocs gh-deploy --force`.
-- **`dependabot.yml`**: weekly gomod + github-actions, grouped.
+- **`release.yml`** (tag `v*`): copy `templates/release.yml` — GoReleaser full pipeline (Buildx,
+  GHCR login, cosign, syft, `release --clean`); needs the `HOMEBREW_TAP_TOKEN` repo secret. Ships a
+  template (not generated ad-hoc) so the action versions + `go-version-file` don't drift per repo.
+- **`docs.yml`** (push to main touching docs/commands): copy `templates/docs.yml` — regenerate the
+  command reference, `mkdocs gh-deploy --force`.
+- **`dependabot.yml`**: copy `templates/dependabot.yml` — weekly gomod + github-actions, grouped.
+  Also the fleet's dependency-CVE early warning (a grouped bump PR lands before govulncheck goes red).
 - Repo hygiene: `CHANGELOG.md` (Keep a Changelog), `SECURITY.md` (supported versions +
   private reporting + token-handling policy), `CODE_OF_CONDUCT.md`, `.github/ISSUE_TEMPLATE/*`,
   `pull_request_template.md`, `codecov.yml`.

@@ -1,0 +1,43 @@
+# release.yml — copied into a generated CLI by cliwright (GOAL.md §6).
+# Full GoReleaser pipeline on a version tag: cross-compiled binaries, archives, deb/rpm/apk,
+# checksums, cosign signatures, SBOM, a Docker image, and the Homebrew/Scoop manifest bumps.
+#
+# go-version-file: go.mod (NOT go-version: stable) so the released artifacts are built with the
+# module's declared toolchain — the same one CI tests. See ci.yml for the full rationale.
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub release
+  packages: write   # push the Docker image to GHCR
+  id-token: write   # cosign keyless signing via OIDC
+
+jobs:
+  release:
+    # Skip pre-releases (v1.2.3-rc1): release only from clean tags.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
+      - uses: anchore/sbom-action/download-syft@v0
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # repo-scoped PAT that can push the Homebrew/Scoop manifest to the separate tap/bucket
+          # repos (the default GITHUB_TOKEN can't push cross-repo). Store it as a repo secret.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

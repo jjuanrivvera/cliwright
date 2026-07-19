@@ -4,6 +4,22 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-07-19
+
+### Fixed
+- **Generated CLIs shipped without a live MkDocs site.** `docs.yml` was copied inconsistently and
+  GitHub Pages was never enabled, so `https://<owner>.github.io/<repo>/` 404'd even though
+  `mkdocs gh-deploy` had pushed `gh-pages`. GOAL.md §6 now marks `docs.yml` as non-optional and
+  calls out that Pages must be enabled separately; §10 adds a **"Publishing the doc site"** runbook
+  (dispatch the Docs workflow the first time, `gh api POST .../pages` to enable Pages on `gh-pages`,
+  verify the URL returns 200), plus the reminder that a brand-new repo can silently fail to fire
+  CI/Release/Docs on the initial push — confirm with `gh run list` and dispatch by hand.
+
+### Added
+- **`workflow_dispatch` on `templates/ci.yml`, `templates/release.yml`, and `templates/docs.yml`** —
+  so a fresh repo that doesn't auto-fire on the first push (or tag) can be triggered manually with
+  `gh workflow run <name> --ref <branch-or-tag>`. Previously only some workflows could be dispatched.
+
 ## [0.6.0] — 2026-07-13
 
 ### Added

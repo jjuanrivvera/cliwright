@@ -15,6 +15,7 @@ name: CI
 on:
   push: { branches: [main, develop] }
   pull_request:
+  workflow_dispatch:   # manual run when a fresh repo doesn't auto-fire on the first push
 
 permissions: { contents: read }
 

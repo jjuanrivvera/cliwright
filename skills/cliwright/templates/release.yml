@@ -8,6 +8,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:   # manual run (dispatch --ref <tag>) when a fresh repo doesn't fire on the tag push
 
 permissions:
   contents: write   # create the GitHub release

@@ -736,7 +736,12 @@ setup-hooks clean`. `make check` = fmt + vet + lint + test (the local gate).
   GHCR login, cosign, syft, `release --clean`); needs the `HOMEBREW_TAP_TOKEN` repo secret. Ships a
   template (not generated ad-hoc) so the action versions + `go-version-file` don't drift per repo.
 - **`docs.yml`** (push to main touching docs/commands): copy `templates/docs.yml` — regenerate the
-  command reference, `mkdocs gh-deploy --force`.
+  command reference, `mkdocs gh-deploy --force`. It also carries `workflow_dispatch` for the first
+  deploy. **Copy it into EVERY repo — it is not optional; a CLI without it ships no live doc site.**
+  Two publish-time steps the workflow alone does NOT do (whoever publishes must, once, per repo —
+  see §10 "Publishing the doc site"): manually run it the first time, and **enable GitHub Pages** on
+  the `gh-pages` branch (`mkdocs gh-deploy` pushes the branch, but Pages stays off until you turn it
+  on — the site 404s otherwise).
 - **`dependabot.yml`**: copy `templates/dependabot.yml` — weekly gomod + github-actions, grouped.
   Also the fleet's dependency-CVE early warning (a grouped bump PR lands before govulncheck goes red).
 - Repo hygiene: `CHANGELOG.md` (Keep a Changelog), `SECURITY.md` (supported versions +
@@ -912,6 +917,18 @@ Building the surface is half the job; these steps caught the real bugs and raise
   cosign + SBOM, the Claude skill/plugin, and a tagged release that `brew upgrade` actually
   serves, verified end-to-end. **At `local-build` (default), stop after a clean `make verify` —
   do not create a repo, push, or release.** How far to publish is the user's call (§0).
+- **Publishing the doc site (`+release`, one-time per repo).** `docs.yml` + `mkdocs gh-deploy`
+  alone do NOT make the site appear — two extra steps, easy to forget because neither shows up in
+  `make verify`:
+  1. **Run the Docs workflow at least once.** It's `paths`-filtered to `docs/**`, so a first push
+     that doesn't touch those paths won't fire it; and a brand-new repo can silently fail to trigger
+     ANY workflow on the initial push. Dispatch it manually: `gh workflow run Docs --repo <owner>/<repo>
+     --ref main` (the template carries `workflow_dispatch`). This creates the `gh-pages` branch.
+  2. **Enable GitHub Pages on `gh-pages`** — off by default, so the site 404s until you turn it on:
+     `gh api -X POST /repos/<owner>/<repo>/pages -f 'source[branch]=gh-pages' -f 'source[path]=/'`.
+  Then verify the URL actually returns 200 (`https://<owner>.github.io/<repo>/`) — Pages takes a
+  minute to build. The same "new repo didn't fire on push → dispatch manually" applies to `ci.yml`
+  and `release.yml`; confirm each ran (`gh run list`), don't assume the push triggered them.
 - **Public-docs hygiene.** Never put internal strategy, competitor put-downs, or unverified
   benchmark claims in shipped docs (README/MkDocs/skill). Honest comparison ≠ editorializing —
   keep that in `DECISIONS.md`/memory, not the public surface.

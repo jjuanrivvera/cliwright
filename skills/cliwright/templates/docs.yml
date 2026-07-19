@@ -6,6 +6,7 @@ on:
   push:
     branches: [main]
     paths: ['docs/**', 'commands/**', 'mkdocs.yml']
+  workflow_dispatch:   # manual first deploy (and when a fresh repo doesn't auto-fire on push)
 
 permissions:
   contents: write   # gh-pages push

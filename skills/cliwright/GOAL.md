@@ -929,6 +929,13 @@ Building the surface is half the job; these steps caught the real bugs and raise
   Then verify the URL actually returns 200 (`https://<owner>.github.io/<repo>/`) — Pages takes a
   minute to build. The same "new repo didn't fire on push → dispatch manually" applies to `ci.yml`
   and `release.yml`; confirm each ran (`gh run list`), don't assume the push triggered them.
+  3. **Make the docs discoverable** — a deployed site nobody links to is invisible. Two one-time steps:
+     set the **repo homepage** to the doc-site URL (`gh repo edit <owner>/<repo> --homepage
+     https://<owner>.github.io/<repo>/`), so it shows in the GitHub repo header; and ensure the
+     **README links to the docs** near the top (a `[Documentation] · [Command reference]` line — the
+     command-reference page is per-binary at `/commands/<binary>/`, not `/commands/`). The README's
+     badge/header block is org-specific house style — keep the exact block in your org conventions,
+     not here.
 - **Public-docs hygiene.** Never put internal strategy, competitor put-downs, or unverified
   benchmark claims in shipped docs (README/MkDocs/skill). Honest comparison ≠ editorializing —
   keep that in `DECISIONS.md`/memory, not the public surface.

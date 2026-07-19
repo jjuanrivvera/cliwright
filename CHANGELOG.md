@@ -4,6 +4,16 @@ All notable changes to cliwright are documented here. Format: [Keep a Changelog]
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-07-19
+
+### Added
+- **§10 "Publishing the doc site" now covers discoverability** — a deployed doc site nobody links to
+  is invisible. Added the two one-time publish steps: set the **repo homepage** to the doc-site URL
+  (`gh repo edit --homepage`) so it shows in the GitHub repo header, and ensure the **README links to
+  the docs** near the top (a `[Documentation] · [Command reference]` line; the command-reference page
+  is per-binary at `/commands/<binary>/`, not `/commands/`). The exact badge/header block stays
+  org-specific house style, not in the generic playbook.
+
 ## [0.6.1] — 2026-07-19
 
 ### Fixed
